@@ -1,8 +1,63 @@
-// 🔥 FIREBASE SETUP (ONLY ONCE)
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+// 🔹 React
+import React, { useState, useMemo, useEffect } from "react";
 
+// 🔹 Firebase
+import { initializeApp } from "firebase/app";
+import {
+  getAuth,
+  signInAnonymously,
+  signInWithCustomToken,
+  onAuthStateChanged
+} from "firebase/auth";
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  deleteDoc,
+  collection,
+  onSnapshot
+} from "firebase/firestore";
+
+// 🔹 Icons
+import {
+  LayoutDashboard,
+  ArrowRightLeft,
+  UserCheck,
+  UserMinus,
+  Target,
+  Plus,
+  Search,
+  X,
+  FileSpreadsheet,
+  Settings,
+  Trash2,
+  Pencil,
+  Wallet,
+  PlusCircle,
+  RotateCcw,
+  CheckCircle2,
+  Sparkles,
+  Loader2,
+  Cloud,
+  Banknote,
+  ChevronDown,
+  History,
+  ArrowRightLeft as NetIcon,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Database,
+  Clock,
+  CalendarDays,
+  BellRing,
+  Plane,
+  Car,
+  TrendingUp,
+  RefreshCcw,
+  CreditCard as CardIcon,
+  FileText
+} from "lucide-react";
+
+// 🔥 FIREBASE SETUP
 const firebaseConfig = {
   apiKey: "AIzaSyDE3sdmPG3TGKV0CJDWHYPzDRE-8OKIanw",
   authDomain: "hs-expensemanager.firebaseapp.com",
@@ -14,60 +69,8 @@ const firebaseConfig = {
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
-export const auth = getAuth(firebaseApp);
-export const db = getFirestore(firebaseApp);
-
-import React, { useState, useMemo, useEffect } from "react";
-import {
-  signInAnonymously,
-  signInWithCustomToken,
-  onAuthStateChanged
-} from "firebase/auth";
-import {
-  doc,
-  setDoc,
-  deleteDoc,
-  collection,
-  onSnapshot
-} from "firebase/firestore";
-
-import { 
-  LayoutDashboard, 
-  ArrowRightLeft, 
-  UserCheck, 
-  UserMinus, 
-  Target, 
-  Plus, 
-  Search, 
-  X, 
-  FileSpreadsheet, 
-  Settings, 
-  Trash2, 
-  Pencil,
-  Wallet, 
-  PlusCircle, 
-  RotateCcw, 
-  CheckCircle2, 
-  Sparkles, 
-  Loader2, 
-  Cloud, 
-  Banknote, 
-  ChevronDown, 
-  History, 
-  ArrowRightLeft as NetIcon, 
-  ArrowDownLeft, 
-  ArrowUpRight, 
-  Database, 
-  Clock, 
-  CalendarDays, 
-  BellRing, 
-  Plane, 
-  Car, 
-  TrendingUp, 
-  RefreshCcw, 
-  CreditCard as CardIcon, 
-  FileText 
-} from 'lucide-react';
+const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
 
 
 const appId = 'hs-expenses-manager-pro';
@@ -588,4 +591,5 @@ const App = () => {
 
 
 export default App;
+
 

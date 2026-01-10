@@ -1,8 +1,14 @@
-// src/firebase.js
-import { initializeApp, getApps, getApp } from "firebase/app";
+// Firebase core
+import { initializeApp } from "firebase/app";
+
+// Firebase services you are USING
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
+// (Optional) Analytics — safe only in browser
+import { getAnalytics } from "firebase/analytics";
+
+// 🔹 Firebase configuration (YOUR PROJECT)
 const firebaseConfig = {
   apiKey: "AIzaSyDE3sdmPG3TGKV0CJDWHYPzDRE-8OKIanw",
   authDomain: "hs-expensemanager.firebaseapp.com",
@@ -13,8 +19,15 @@ const firebaseConfig = {
   measurementId: "G-PFS0S1EKBC"
 };
 
-// 🔒 Firebase ko sirf ek baar initialize karne ka safe tarika
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+// 🔹 Initialize Firebase (ONLY ONCE)
+const app = initializeApp(firebaseConfig);
 
+// 🔹 Export services (USED by React)
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// 🔹 Analytics (optional, browser only)
+export const analytics =
+  typeof window !== "undefined" ? getAnalytics(app) : null;
+
+export default app;

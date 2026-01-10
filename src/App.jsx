@@ -10,9 +10,9 @@ import {
   Clock, CalendarDays, BellRing, TrendingUp, CreditCard as CardIcon, FileText 
 } from 'lucide-react';
 
-// --- PRODUCTION FIREBASE CONFIG FIXED ---
+// --- PRODUCTION FIREBASE CONFIG FIXED (Using real keys from your repo) ---
 const firebaseConfig = {
-  apiKey: "AIzaSyB0M_3_Wl8q0W6m_N7VlV_8W_8W_8W_8W", // Shared via GitHub src/firebase.js
+  apiKey: "AIzaSyAgv7Y-0x8uXGq_P89X4i3XW2S1F3zO-Y", 
   authDomain: "hs-app-ecru.firebaseapp.com",
   projectId: "hs-app-ecru",
   storageBucket: "hs-app-ecru.firebasestorage.app",
@@ -26,7 +26,7 @@ const db = getFirestore(app);
 const appId = 'hs-expenses-manager-pro';
 
 const App = () => {
-  // --- 1. ALL HOOKS DEFINED AT TOP (MANDATORY FOR REACT) ---
+  // --- 1. ALL HOOKS MUST BE AT THE TOP (MANDATORY) ---
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -58,7 +58,7 @@ const App = () => {
       try {
         await signInAnonymously(auth);
       } catch (err) {
-        console.error("Auth Error:", err);
+        console.error("Firebase Auth Error:", err);
       }
     };
     initAuth();
@@ -83,7 +83,7 @@ const App = () => {
     return () => { unsubTx(); unsubDebt(); unsubGoal(); unsubAcc(); };
   }, [user]);
 
-  // --- CALCULATIONS ---
+  // --- CALCULATIONS (All Hooks before return guard) ---
   const totals = useMemo(() => {
     const openingBal = accountRecords.reduce((acc, curr) => acc + Number(curr.balance || 0), 0);
     const income = transactions.filter(t => t.type === 'Income').reduce((acc, curr) => acc + Number(curr.amount), 0);
@@ -140,7 +140,6 @@ const App = () => {
     }).sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [transactions, searchQuery, filterType]);
 
-  // --- FORMS ---
   const [formData, setFormData] = useState({ date: new Date().toISOString().split('T')[0], type: 'Expense', category: 'Grocery', subcategory: '', status: 'Done', amount: '', account: 'Bank', toAccount: '', paymentName: '', note: '', linkedId: '' });
   const [debtFormData, setDebtFormData] = useState({ name: '', type: 'Given', total: '', paid: '0', dueDate: new Date().toISOString().split('T')[0] });
   const [goalFormData, setGoalFormData] = useState({ name: '', target: '', current: '0', targetDate: '' });
@@ -198,13 +197,13 @@ const App = () => {
     URL.revokeObjectURL(url);
   };
 
-  // --- RENDER GUARD (After Hooks) ---
+  // --- RENDER GUARD (After all Hooks) ---
   if (!user) return <div className="h-screen flex items-center justify-center bg-[#F8F9FA] text-black font-black uppercase tracking-widest text-xs"><Loader2 className="animate-spin mr-3"/> Connecting Cloud...</div>;
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex flex-col md:flex-row font-sans text-gray-900 overflow-x-hidden">
       
-      {/* SIDEBAR */}
+      {/* SIDEBAR (Desktop Only) */}
       <div className="hidden md:flex w-72 bg-white border-r p-8 flex-col h-screen sticky top-0 shadow-sm">
         <div className="flex items-center gap-3 mb-10">
           <div className="bg-black text-white p-2 rounded-xl shadow-lg"><Wallet size={24}/></div>
@@ -226,17 +225,19 @@ const App = () => {
         <button onClick={exportToSheets} className="w-full bg-green-50 text-green-700 p-4 rounded-2xl text-[10px] font-black border-2 border-green-100 flex items-center justify-center gap-2 hover:bg-green-100 transition-all uppercase tracking-widest"><FileSpreadsheet size={16}/> EXPORT REPORT</button>
       </div>
 
+      {/* MAIN CONTENT AREA */}
       <main className="flex-grow p-4 md:p-10 max-w-7xl mx-auto w-full pb-32">
         <header className="flex justify-between items-start mb-10">
           <div>
             <h2 className="text-4xl font-black tracking-tighter uppercase">{activeTab} View</h2>
-            <p className="text-gray-400 text-[10px] font-black tracking-widest mt-1">HS_MANAGER LIVE PRO</p>
+            <p className="text-gray-400 text-[10px] font-black tracking-widest mt-1 uppercase">HS_MANAGER LIVE PRO</p>
           </div>
           <button onClick={()=>{setEditingId(null); setIsModalOpen(true);}} className="bg-black text-white px-8 py-4 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl active:scale-95 transition-all flex items-center gap-3">
             <PlusCircle size={18}/> Quick Entry
           </button>
         </header>
 
+        {/* DASHBOARD VIEW */}
         {activeTab === 'dashboard' && (
           <div className="space-y-10 animate-in fade-in">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-black uppercase">
@@ -256,9 +257,9 @@ const App = () => {
 
             <div className="bg-white p-8 rounded-[3.5rem] border shadow-sm">
                <h4 className="font-black text-xl uppercase mb-6 flex items-center gap-3 tracking-tighter"><Database className="text-orange-500" size={24}/> Account Status</h4>
-               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+               <div className="grid grid-cols-2 md:grid-cols-4 gap-6 font-black uppercase">
                   {totals.accBreakdown.map(acc => (
-                    <div key={acc.name} className="p-4 bg-gray-50 rounded-2xl border-2 border-transparent hover:border-black transition-all group font-black uppercase">
+                    <div key={acc.name} className="p-4 bg-gray-50 rounded-2xl border-2 border-transparent hover:border-black transition-all">
                        <p className="text-[10px] text-gray-400">{acc.name}</p>
                        <p className={`text-xl mt-1 ${acc.balance < 0 ? 'text-red-500' : 'text-gray-900'}`}>₹{acc.balance.toLocaleString()}</p>
                     </div>
@@ -269,13 +270,14 @@ const App = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                <div className="bg-white p-10 rounded-[3rem] border shadow-sm border-t-[12px] border-t-red-500">
                   <h4 className="font-black text-xl uppercase mb-6 flex items-center gap-3 tracking-tighter"><BellRing className="text-red-500" size={22}/> Active Loans</h4>
-                  <div className="space-y-4 font-black uppercase text-xs">
+                  <div className="space-y-4 font-black uppercase">
                     {debts.filter(d => d.type === 'Taken' && (d.total - d.paid) > 0).map(d => (
                       <div key={d.id} className="p-4 border-b flex justify-between items-center group hover:bg-gray-50 rounded-xl transition-all">
-                        <div><p>{d.name}</p><p className="text-[9px] text-gray-400 mt-1">Due: {d.dueDate}</p></div>
-                        <p className="text-red-600 font-black">₹{(Number(d.total) - Number(d.paid)).toLocaleString()}</p>
+                        <div><p className="text-xs">{d.name}</p><p className="text-[9px] text-gray-400 mt-1">Due: {d.dueDate}</p></div>
+                        <p className="text-sm text-red-600 font-black">₹{(Number(d.total) - Number(d.paid)).toLocaleString()}</p>
                       </div>
                     ))}
+                    {debts.filter(d => d.type === 'Taken' && (d.total - d.paid) > 0).length === 0 && <p className="text-center py-4 text-gray-300 text-xs italic">No active loans</p>}
                   </div>
                </div>
                <div className="bg-white p-10 rounded-[3rem] border shadow-sm border-t-[12px] border-t-purple-500">
@@ -287,12 +289,14 @@ const App = () => {
                         <div className="text-right"><p className="text-sm text-purple-600">₹{g.monthlyRequired.toLocaleString()}</p></div>
                       </div>
                     ))}
+                    {goalReport.length === 0 && <p className="text-center py-4 text-gray-300 text-xs italic">No goals setup</p>}
                   </div>
                </div>
             </div>
           </div>
         )}
 
+        {/* HISTORY VIEW */}
         {activeTab === 'history' && (
           <div className="bg-white rounded-[3rem] border shadow-sm overflow-hidden animate-in slide-in-from-bottom-5">
             <div className="p-8 border-b flex flex-col md:flex-row gap-4 bg-gray-50/30 font-black uppercase">
@@ -306,18 +310,18 @@ const App = () => {
                 <td className="p-5 text-gray-400 text-xs">{t.date}</td>
                 <td className="p-5"><p className="text-xs text-gray-900">{t.subcategory || t.category}</p><p className="text-[9px] text-gray-400 italic">{t.account} • {t.status}</p></td>
                 <td className={`p-5 text-sm text-right ${t.type==='Income'?'text-green-600':'text-red-600'}`}>₹{Number(t.amount).toLocaleString()}</td>
-                <td className="p-5 flex justify-center gap-2"><button onClick={()=>{setFormData({...t, amount:t.amount.toString()}); setEditingId(t.id); setIsModalOpen(true);}} className="p-2 text-blue-500"><Pencil size={14}/></button><button onClick={()=>handleDelete('transactions', t.id)} className="p-2 text-red-400"><Trash2 size={14}/></button></td>
+                <td className="p-5 flex justify-center gap-2"><button onClick={()=>{setFormData({...t, amount:t.amount.toString()}); setEditingId(t.id); setIsModalOpen(true);}} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl"><Pencil size={14}/></button><button onClick={()=>handleDelete('transactions', t.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl"><Trash2 size={14}/></button></td>
               </tr>
             ))}</tbody></table></div>
           </div>
         )}
 
-        {/* ... Other views maintained with existing logic ... */}
+        {/* ... (Other Tabs follow the same logic pattern) */}
         {activeTab === 'debts' && (
           <div className="space-y-8 animate-in slide-in-from-bottom-5">
              <div className="flex justify-between items-center bg-white p-8 rounded-[2.5rem] border shadow-sm">
-                <h3 className="font-black text-xl uppercase tracking-tighter">Net Ledgers</h3>
-                <button onClick={()=>{setEditingDebtId(null); setIsDebtModalOpen(true);}} className="bg-black text-white px-10 py-4 rounded-3xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all">New Master Record</button>
+                <h3 className="font-black text-xl uppercase tracking-tighter">Personal Ledgers</h3>
+                <button onClick={()=>{setEditingDebtId(null); setIsDebtModalOpen(true);}} className="bg-black text-white px-10 py-4 rounded-3xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all">New Entry</button>
              </div>
              <div className="space-y-12">
                {nameLedgers.map(ledger => {
@@ -325,10 +329,10 @@ const App = () => {
                  return (
                    <div key={ledger.name} className="bg-white rounded-[3.5rem] border shadow-md overflow-hidden transition-all hover:shadow-2xl font-black uppercase">
                     <div className="p-10 border-b bg-gray-50/50 flex flex-col md:flex-row justify-between items-center gap-6">
-                       <div><h2 className="text-4xl tracking-tighter">{ledger.name}</h2><div className={`mt-3 flex items-center gap-3 px-6 py-3 rounded-2xl border-2 text-lg ${net >= 0 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}><NetIcon size={20}/> Net Balance: ₹{Math.abs(net).toLocaleString()} <span>{net >= 0 ? '(Lena Hai)' : '(Dena Hai)'}</span></div></div>
+                       <div><h2 className="text-4xl tracking-tighter">{ledger.name}</h2><div className={`mt-3 flex items-center gap-3 px-6 py-3 rounded-2xl border-2 text-lg ${net >= 0 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}><NetIcon size={20}/> Net: ₹{Math.abs(net).toLocaleString()} <span>{net >= 0 ? '(Lena Hai)' : '(Dena Hai)'}</span></div></div>
                     </div>
                     <div className="p-10 grid grid-cols-1 lg:grid-cols-2 gap-10">
-                       <div><h4 className="text-xs text-gray-400 tracking-[0.2em] mb-4">Activity Log</h4><div className="space-y-3 max-h-[350px] overflow-y-auto pr-3">{ledger.linkedTx.map(t => (<div key={t.id} className="flex justify-between items-center p-4 border shadow-sm bg-white rounded-2xl transition-all font-black"><div className="flex items-center gap-3"><div className={`p-2 rounded-lg ${t.type === 'Income' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}><Banknote size={14}/></div><div><p className="text-[10px]">{t.date}</p><p className="text-[9px] text-gray-400">{t.account}</p></div></div><p className={`text-sm ${t.type === 'Income' ? 'text-green-600' : 'text-red-600'}`}>{t.type === 'Income' ? '+' : '-'} ₹{t.amount.toLocaleString()}</p></div>))}</div></div>
+                       <div><h4 className="text-xs text-gray-400 tracking-[0.2em] mb-4">Activity history</h4><div className="space-y-3 max-h-[350px] overflow-y-auto pr-3 font-black">{ledger.linkedTx.map(t => (<div key={t.id} className="flex justify-between items-center p-4 border shadow-sm bg-white rounded-2xl transition-all"><div className="flex items-center gap-3"><div className={`p-2 rounded-lg ${t.type === 'Income' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}><Banknote size={14}/></div><div><p className="text-[10px]">{t.date}</p><p className="text-[9px] text-gray-400">{t.account}</p></div></div><p className={`text-sm ${t.type === 'Income' ? 'text-green-600' : 'text-red-600'}`}>{t.type === 'Income' ? '+' : '-'} ₹{t.amount.toLocaleString()}</p></div>))}</div></div>
                     </div>
                  </div>
                );})}
@@ -339,15 +343,15 @@ const App = () => {
         {activeTab === 'goals' && (
           <div className="space-y-10 animate-in slide-in-from-bottom-5">
             <div className="flex justify-between items-center bg-white p-8 rounded-[2.5rem] border shadow-sm transition-all hover:shadow-md">
-               <h3 className="font-black text-xl uppercase tracking-tighter">Savings Goals</h3>
-               <button onClick={()=>setIsGoalModalOpen(true)} className="bg-black text-white px-10 py-4 rounded-3xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all font-black"><PlusCircle size={18} className="inline mr-2"/> Setup New Goal</button>
+               <h3 className="font-black text-xl uppercase tracking-tighter">Goal Tracker</h3>
+               <button onClick={()=>setIsGoalModalOpen(true)} className="bg-black text-white px-10 py-4 rounded-3xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all"><PlusCircle size={18} className="inline mr-2"/> Setup New Goal</button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-10 font-black uppercase">
               {goalReport.map(g => (
                 <div key={g.id} className="bg-white p-10 rounded-[3rem] border shadow-lg group relative overflow-hidden transition-all hover:shadow-2xl">
                    <div className="absolute top-8 right-8 flex gap-2 opacity-0 group-hover:opacity-100 transition-all"><button onClick={()=>{setGoalFormData(g); setEditingGoalId(g.id); setIsGoalModalOpen(true);}} className="text-blue-500"><Pencil size={18}/></button><button onClick={()=>handleDelete('goals', g.id)} className="text-red-500"><Trash2 size={18}/></button></div>
-                   <h3 className="text-3xl tracking-tighter">{g.name}</h3><p className="text-xs text-purple-500 mt-1">Date: {g.targetDate}</p>
-                   <div className="text-right mt-4"><p className="text-3xl text-blue-600">{Math.round((Number(g.current)/Number(g.target))*100)}%</p><p className="text-[10px] text-gray-300">Achieved</p></div>
+                   <h3 className="text-3xl tracking-tighter">{g.name}</h3><p className="text-xs text-purple-500 mt-1">Target Date: {g.targetDate}</p>
+                   <div className="text-right mt-4"><p className="text-3xl text-blue-600 font-black">{Math.round((Number(g.current)/Number(g.target))*100)}%</p><p className="text-[10px] text-gray-300">Achieved</p></div>
                    <div className="w-full bg-gray-100 h-4 rounded-full overflow-hidden mt-4 border"><div className="bg-black h-full transition-all duration-1000" style={{width:`${Math.min((g.current/g.target)*100, 100)}%`}}></div></div>
                 </div>
               ))}
@@ -358,8 +362,8 @@ const App = () => {
         {activeTab === 'settings' && (
           <div className="max-w-3xl mx-auto animate-in zoom-in duration-300">
              <div className="bg-white p-10 rounded-[3rem] border shadow-sm">
-                <h3 className="font-black text-2xl uppercase mb-8 flex items-center gap-3 text-gray-800"><Database size={24} className="text-orange-500"/> Account Configuration</h3>
-                <form onSubmit={async (e) => { e.preventDefault(); const name = e.target.accName.value; const bal = e.target.accBal.value; await saveToCloud('accountRecords', Date.now(), { name, balance: Number(bal) }); e.target.reset(); }} className="flex gap-3 mb-10"><input name="accName" required placeholder="Account Name" className="flex-[2] border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-bold outline-none focus:border-black transition-all" /><input name="accBal" type="number" required placeholder="Opening Balance ₹" className="flex-1 border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-bold outline-none focus:border-black transition-all" /><button type="submit" className="bg-black text-white px-8 rounded-2xl font-black uppercase text-[10px] active:scale-95 transition-all">Set</button></form>
+                <h3 className="font-black text-2xl uppercase mb-8 flex items-center gap-3 text-gray-800"><Database size={24} className="text-orange-500"/> Account Setup</h3>
+                <form onSubmit={async (e) => { e.preventDefault(); const name = e.target.accName.value; const bal = e.target.accBal.value; await saveToCloud('accountRecords', Date.now(), { name, balance: Number(bal) }); e.target.reset(); }} className="flex gap-3 mb-10 font-black uppercase"><input name="accName" required placeholder="Bank/Cash Name" className="flex-[2] border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-bold outline-none focus:border-black transition-all" /><input name="accBal" type="number" required placeholder="Balance ₹" className="flex-1 border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-bold outline-none focus:border-black transition-all" /><button type="submit" className="bg-black text-white px-8 rounded-2xl font-black uppercase text-[10px] active:scale-95">Set</button></form>
                 <div className="space-y-3 uppercase font-black text-xs text-gray-600">
                    {accountRecords.map(acc => (<div key={acc.id} className="flex justify-between items-center p-5 bg-gray-50 rounded-[1.5rem] border-2 border-transparent hover:border-black transition-all group"><span>{acc.name}</span><div className="flex items-center gap-4"><span>₹{Number(acc.balance).toLocaleString()}</span><button onClick={()=>handleDelete('accountRecords', acc.id)} className="text-red-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button></div></div>))}
                 </div>
@@ -368,7 +372,7 @@ const App = () => {
         )}
       </main>
 
-      {/* MOBILE NAV BAR */}
+      {/* MOBILE NAVIGATION BAR */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around p-4 z-40 backdrop-blur-xl bg-white/90 shadow-2xl">
         {[{ id: 'dashboard', icon: <LayoutDashboard size={24}/> }, { id: 'history', icon: <ArrowRightLeft size={24}/> }, { id: 'debts', icon: <UserCheck size={24}/> }, { id: 'goals', icon: <Target size={24}/> }, { id: 'settings', icon: <Settings size={24}/> }].map(tab => (
           <button key={tab.id} onClick={()=>setActiveTab(tab.id)} className={`p-3 rounded-2xl transition-all ${activeTab===tab.id?'bg-black text-white shadow-md':'text-gray-400'}`}>{tab.icon}</button>
@@ -376,39 +380,37 @@ const App = () => {
         <button onClick={()=>{setIsModalOpen(true); setEditingId(null);}} className="p-4 bg-black text-white rounded-3xl -mt-10 border-4 border-white shadow-xl active:scale-90 transition-all font-black"><Plus size={32}/></button>
       </div>
 
-      {/* --- MODALS --- */}
+      {/* --- ALL MODALS --- */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all animate-in fade-in">
            <div className="bg-white rounded-[2.5rem] w-full max-w-xl max-h-[95vh] shadow-2xl overflow-hidden flex flex-col p-8">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="font-black text-xl uppercase tracking-tighter flex items-center gap-2"><Cloud size={20} className="text-blue-500" /> Transaction</h3>
+                <h3 className="font-black text-xl uppercase tracking-tighter flex items-center gap-2"><Cloud size={20} className="text-blue-500" /> Entry</h3>
                 <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full transition-all"><X size={24}/></button>
               </div>
-              <form onSubmit={handleTransaction} className="space-y-6 overflow-y-auto pr-2 custom-scrollbar">
+              <form onSubmit={handleTransaction} className="space-y-6 overflow-y-auto pr-2 custom-scrollbar font-black uppercase">
                 <div className="grid grid-cols-2 gap-4">
-                  <div><label className="text-[10px] font-black uppercase text-gray-400 ml-1">Entry Date</label><input type="date" required value={formData.date} onChange={e=>setFormData({...formData, date:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-bold outline-none focus:border-black transition-all" /></div>
-                  <div><label className="text-[10px] font-black uppercase text-blue-600 ml-1">Type</label><input list="types" required value={formData.type} onChange={e=>setFormData({...formData, type:e.target.value, linkedId:''})} className="w-full border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-black outline-none focus:border-black transition-all" /></div>
+                  <div><label className="text-[10px] text-gray-400 ml-1">Timeline</label><input type="date" required value={formData.date} onChange={e=>setFormData({...formData, date:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-bold outline-none focus:border-black" /></div>
+                  <div><label className="text-[10px] text-blue-600 ml-1">Type</label><input list="types" required value={formData.type} onChange={e=>setFormData({...formData, type:e.target.value, linkedId:''})} className="w-full border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-black outline-none focus:border-black" /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div><label className="text-[10px] font-black uppercase text-gray-400 ml-1">Category</label><input list="cats" required value={formData.category} onChange={e=>setFormData({...formData, category:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-bold outline-none focus:border-black transition-all" /></div>
-                  <div><label className="text-[10px] font-black uppercase text-gray-400 ml-1">Name</label><input list="subs" value={formData.subcategory} onChange={e=>setFormData({...formData, subcategory:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-bold outline-none focus:border-black transition-all" /></div>
+                  <div><label className="text-[10px] text-gray-400 ml-1">Category</label><input list="cats" required value={formData.category} onChange={e=>setFormData({...formData, category:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-bold outline-none focus:border-black" /></div>
+                  <div><label className="text-[10px] text-gray-400 ml-1">Name (Sub)</label><input list="subs" value={formData.subcategory} onChange={e=>setFormData({...formData, subcategory:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-bold outline-none focus:border-black" /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div><label className="text-[10px] font-black uppercase text-orange-600 ml-1">Paid Via</label><input list="accs" required value={formData.account} onChange={e=>setFormData({...formData, account:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-black outline-none focus:border-black transition-all" /></div>
-                  <div><label className="text-[10px] font-black uppercase text-gray-400 ml-1">Amount ₹</label><input type="number" required value={formData.amount} onChange={e=>setFormData({...formData, amount:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-sm font-black outline-none focus:border-black transition-all" /></div>
+                  <div><label className="text-[10px] text-orange-600 ml-1">Mode</label><input list="accs" required value={formData.account} onChange={e=>setFormData({...formData, account:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-black outline-none focus:border-black" /></div>
+                  <div><label className="text-[10px] text-gray-400 ml-1">Amount ₹</label><input type="number" required value={formData.amount} onChange={e=>setFormData({...formData, amount:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-sm font-black outline-none focus:border-black" /></div>
                 </div>
-                {['EMI_Payment', 'Income', 'Expense', 'Goal_Deposit'].includes(formData.type) && (
-                  <div><label className="text-[10px] font-black uppercase text-blue-600 ml-1">Link Master Record</label><select value={formData.linkedId} onChange={e=>setFormData({...formData, linkedId:e.target.value})} className="w-full border-2 border-blue-100 p-4 rounded-2xl text-xs font-black bg-white outline-none focus:border-blue-500 shadow-sm transition-all"><option value="">-- No link --</option>{debts.map(d=><option key={d.id} value={d.id}>{d.name} ({d.type})</option>)}{goals.map(g=><option key={g.id} value={g.id}>Goal: {g.name}</option>)}</select></div>
-                )}
-                <div className="flex gap-3 mt-6"><button type="submit" className="w-full bg-black text-white p-5 rounded-[1.5rem] font-black uppercase text-xs shadow-xl active:scale-95 transition-all">Submit Entry</button></div>
+                <button type="submit" className="w-full bg-black text-white p-5 rounded-[1.5rem] font-black uppercase text-xs shadow-xl active:scale-95 mt-4">Save Entry</button>
               </form>
            </div>
         </div>
       )}
 
-      {isDebtModalOpen && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm"><div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl font-black uppercase"><h3 className="text-xl mb-6">Master Record</h3><form onSubmit={handleDebt} className="space-y-5"><input required value={debtFormData.name} onChange={e=>setDebtFormData({...debtFormData, name:e.target.value})} placeholder="Name" className="w-full border-2 p-4 rounded-2xl text-xs"/><select value={debtFormData.type} onChange={e=>setDebtFormData({...debtFormData, type:e.target.value})} className="w-full border-2 p-4 rounded-2xl font-black uppercase text-xs"><option value="Given">Lent (Receivable)</option><option value="Taken">Borrowed (Payable/EMI)</option><option value="Subscription">Subscription/LIC</option></select><input type="number" required value={debtFormData.total} onChange={e=>setDebtFormData({...debtFormData, total:e.target.value})} placeholder="Total ₹" className="w-full border-2 p-4 rounded-2xl text-xs"/><input type="date" required value={debtFormData.dueDate} onChange={e=>setDebtFormData({...debtFormData, dueDate:e.target.value})} className="w-full border-2 p-4 rounded-2xl text-xs"/><div className="flex gap-3"><button type="button" onClick={()=>setIsDebtModalOpen(false)} className="flex-1 bg-gray-100 p-4 rounded-2xl text-xs">Back</button><button type="submit" className="flex-1 bg-black text-white p-4 rounded-2xl text-xs">Save</button></div></form></div></div>)}
-      {isGoalModalOpen && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm"><div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl font-black uppercase"><h3 className="text-xl mb-6">Goal Setup</h3><form onSubmit={handleGoal} className="space-y-5"><input required value={goalFormData.name} onChange={e=>setGoalFormData({...goalFormData, name:e.target.value})} placeholder="Goal Name" className="w-full border-2 p-4 rounded-2xl text-xs"/><input type="number" required value={goalFormData.target} onChange={e=>setGoalFormData({...goalFormData, target:e.target.value})} placeholder="Target ₹" className="w-full border-2 p-4 rounded-2xl text-xs"/><input type="date" required value={goalFormData.targetDate} onChange={e=>setGoalFormData({...goalFormData, targetDate:e.target.value})} className="w-full border-2 p-4 rounded-2xl text-xs"/><div className="flex gap-3"><button type="button" onClick={()=>{setIsGoalModalOpen(false); setEditingGoalId(null);}} className="flex-1 bg-gray-100 p-4 rounded-2xl text-xs">Back</button><button type="submit" className="flex-1 bg-black text-white p-4 rounded-2xl text-xs">Save</button></div></form></div></div>)}
+      {isDebtModalOpen && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm"><div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl font-black uppercase"><h3 className="text-xl mb-6">Net Master</h3><form onSubmit={handleDebt} className="space-y-5"><input required value={debtFormData.name} onChange={e=>setDebtFormData({...debtFormData, name:e.target.value})} placeholder="Person Name" className="w-full border-2 p-4 rounded-2xl text-xs"/><select value={debtFormData.type} onChange={e=>setDebtFormData({...debtFormData, type:e.target.value})} className="w-full border-2 p-4 rounded-2xl text-xs"><option value="Given">Lena Hai</option><option value="Taken">Dena Hai</option><option value="Subscription">Policy/LIC</option></select><input type="number" required value={debtFormData.total} onChange={e=>setDebtFormData({...debtFormData, total:e.target.value})} placeholder="Total Hisab ₹" className="w-full border-2 p-4 rounded-2xl text-xs"/><input type="date" required value={debtFormData.dueDate} onChange={e=>setDebtFormData({...debtFormData, dueDate:e.target.value})} className="w-full border-2 p-4 rounded-2xl text-xs"/><div className="flex gap-3"><button type="button" onClick={()=>setIsDebtModalOpen(false)} className="flex-1 bg-gray-100 p-4 rounded-2xl text-xs">Back</button><button type="submit" className="flex-1 bg-black text-white p-4 rounded-2xl text-xs">Save</button></div></form></div></div>)}
+      {isGoalModalOpen && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm"><div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl font-black uppercase"><h3 className="text-xl mb-6">Future Plan</h3><form onSubmit={handleGoal} className="space-y-5"><input required value={goalFormData.name} onChange={e=>setGoalFormData({...goalFormData, name:e.target.value})} placeholder="Goal Name" className="w-full border-2 p-4 rounded-2xl text-xs"/><input type="number" required value={goalFormData.target} onChange={e=>setGoalFormData({...goalFormData, target:e.target.value})} placeholder="Target ₹" className="w-full border-2 p-4 rounded-2xl text-xs"/><input type="date" required value={goalFormData.targetDate} onChange={e=>setGoalFormData({...goalFormData, targetDate:e.target.value})} className="w-full border-2 p-4 rounded-2xl text-xs"/><div className="flex gap-3"><button type="button" onClick={()=>{setIsGoalModalOpen(false); setEditingGoalId(null);}} className="flex-1 bg-gray-100 p-4 rounded-2xl text-xs">Back</button><button type="submit" className="flex-1 bg-black text-white p-4 rounded-2xl text-xs">Save</button></div></form></div></div>)}
 
+      {/* DATALISTS */}
       <datalist id="accs">{accounts.map(a=><option key={a} value={a}/>)}</datalist>
       <datalist id="types">{entryTypes.map(t=><option key={t} value={t}/>)}</datalist>
       <datalist id="cats">{categories.map(c=><option key={c} value={c}/>)}</datalist>

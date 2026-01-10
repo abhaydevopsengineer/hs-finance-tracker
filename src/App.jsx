@@ -1,22 +1,22 @@
 // 🔹 React
 import React, { useState, useMemo, useEffect } from "react";
 
-// 🔹 Firebase
-import { initializeApp } from "firebase/app";
+// 🔹 Firebase (SAFE IMPORTS ONLY)
 import {
-  getAuth,
   signInAnonymously,
   signInWithCustomToken,
   onAuthStateChanged
 } from "firebase/auth";
+
 import {
-  getFirestore,
   doc,
   setDoc,
   deleteDoc,
   collection,
   onSnapshot
 } from "firebase/firestore";
+
+import { auth, db } from "./firebase";
 
 // 🔹 Icons
 import {
@@ -42,7 +42,6 @@ import {
   Banknote,
   ChevronDown,
   History,
-  ArrowRightLeft as NetIcon,
   ArrowDownLeft,
   ArrowUpRight,
   Database,
@@ -57,26 +56,7 @@ import {
   FileText
 } from "lucide-react";
 
-// 🔥 FIREBASE SETUP
-const firebaseConfig = {
-  apiKey: "AIzaSyDE3sdmPG3TGKV0CJDWHYPzDRE-8OKIanw",
-  authDomain: "hs-expensemanager.firebaseapp.com",
-  projectId: "hs-expensemanager",
-  storageBucket: "hs-expensemanager.firebasestorage.app",
-  messagingSenderId: "500261749602",
-  appId: "1:500261749602:web:9840d9da48d8ace202223b",
-  measurementId: "G-PFS0S1EKBC"
-};
-
-const firebaseApp = initializeApp(firebaseConfig);
-const auth = getAuth(firebaseApp);
-const db = getFirestore(firebaseApp);
-
-
-const appId = 'hs-expenses-manager-pro';
-
-const App = () => {
-  const apiKey = ""; 
+const appId = "hs-expenses-manager-pro";
 
   // --- STATES ---
   const [user, setUser] = useState(null);
@@ -591,5 +571,6 @@ const App = () => {
 
 
 export default App;
+
 
 

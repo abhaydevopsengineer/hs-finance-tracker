@@ -1,25 +1,18 @@
-import React, { useState, useMemo, useEffect } from 'react';
-// 🔥 GLOBAL RUNTIME ERROR CATCH (VERY IMPORTANT)
-useEffect(() => {
-  window.onerror = function (msg, url, lineNo, columnNo, error) {
-    document.body.innerHTML = `
-      <pre style="color:red; padding:20px; font-size:14px;">
-RUNTIME ERROR:
-${msg}
-
-Line: ${lineNo}
-Column: ${columnNo}
-
-${error?.stack || ''}
-      </pre>
-    `;
-  };
-}, []);
+import React, { useState, useMemo, useEffect } from "react";
 
 import { auth, db } from "./firebase";
-import { signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "firebase/auth";
-import { collection, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore";
-import { LayoutDashboard, ArrowRightLeft,UserCheck, UserMinus} from 'lucide-react';
+import {
+  signInAnonymously,
+  signInWithCustomToken,
+  onAuthStateChanged
+} from "firebase/auth";
+import {
+  collection,
+  onSnapshot,
+  doc,
+  setDoc,
+  deleteDoc
+} from "firebase/firestore";
 
 import { 
   LayoutDashboard, 
@@ -58,7 +51,28 @@ import {
   FileText 
 } from 'lucide-react';
 
+const App = () => {
 
+  // 🔥 GLOBAL RUNTIME ERROR CATCH (SAFE & VALID)
+  useEffect(() => {
+    window.onerror = function (msg, url, lineNo, columnNo, error) {
+      document.body.innerHTML = `
+        <pre style="color:red; padding:20px; font-size:14px;">
+RUNTIME ERROR:
+${msg}
+
+Line: ${lineNo}
+Column: ${columnNo}
+
+${error?.stack || ""}
+        </pre>
+      `;
+    };
+
+    return () => {
+      window.onerror = null;
+    };
+  }, []);
 
 
 
@@ -467,7 +481,7 @@ useEffect(() => {
                  return (
                    <div key={ledger.name} className="bg-white rounded-[3.5rem] border shadow-md overflow-hidden transition-all hover:shadow-2xl font-black uppercase">
                     <div className="p-10 border-b bg-gray-50/50 flex flex-col md:flex-row justify-between items-center gap-6">
-                       <div><h2 className="text-4xl tracking-tighter text-gray-900">{ledger.name}</h2><div className={`mt-3 flex items-center gap-3 px-6 py-3 rounded-2xl border-2 text-lg tracking-widest shadow-sm ${net >= 0 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}><NetIcon size={20}/> Net Balance: ₹{Math.abs(net).toLocaleString()} <span>{net >= 0 ? '(Lena Hai)' : '(Dena Hai)'}</span></div></div>
+                       <div><h2 className="text-4xl tracking-tighter text-gray-900">{ledger.name}</h2><div className={`mt-3 flex items-center gap-3 px-6 py-3 rounded-2xl border-2 text-lg tracking-widest shadow-sm ${net >= 0 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}><ArrowRightLeft size={20}/> Net Balance: ₹{Math.abs(net).toLocaleString()} <span>{net >= 0 ? '(Lena Hai)' : '(Dena Hai)'}</span></div></div>
                        <div className="flex gap-8 text-center uppercase font-black tracking-widest font-black uppercase tracking-widest"><div className="bg-green-50/50 p-4 rounded-3xl border border-green-100 min-w-[120px]"><p className="text-[10px] text-gray-400 mb-1 flex items-center gap-1 justify-center"><ArrowDownLeft size={12}/> Lena Hai</p><p className="text-2xl text-green-600 font-black">₹{ledger.receivables.toLocaleString()}</p></div><div className="bg-red-50/50 p-4 rounded-3xl border border-red-100 min-w-[120px]"><p className="text-[10px] text-gray-400 mb-1 flex items-center gap-1 justify-center"><ArrowUpRight size={12}/> Dena Hai</p><p className="text-2xl text-red-600 font-black">₹{ledger.payables.toLocaleString()}</p></div></div>
                     </div>
                     <div className="p-10 grid grid-cols-1 lg:grid-cols-2 gap-10 font-black uppercase">
@@ -580,10 +594,3 @@ useEffect(() => {
     </div>
   );
 };
-const App = () => <div>Hello world</div>;
-export default App;
-
-
-
-
-

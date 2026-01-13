@@ -10,7 +10,7 @@ import {
   Clock, CalendarDays, BellRing, TrendingUp, CreditCard as CardIcon, FileText 
 } from 'lucide-react';
 
-// --- HS_MANAGER_V3 STANDALONE CONFIG (Directly Supported) ---
+// --- HS_MANAGER_V4 STANDALONE CONFIG (Directly Supported) ---
 const firebaseConfig = {
   apiKey: "AIzaSyDE3sdmPG3TGKV0CJDWHYPzDRE-8OKIanw",
   authDomain: "hs-expensemanager.firebaseapp.com",
@@ -196,7 +196,7 @@ const App = () => {
       <div className="md:hidden bg-white border-b border-slate-200 p-5 flex justify-between items-center sticky top-0 z-50 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="bg-indigo-600 text-white p-2 rounded-xl"><Wallet size={20}/></div>
-          <h1 className="text-lg font-black tracking-tighter text-slate-900">HS_MANAGER_V3</h1>
+          <h1 className="text-lg font-black tracking-tighter text-slate-900">HS_MANAGER_V4</h1>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
@@ -208,7 +208,7 @@ const App = () => {
       <div className="hidden md:flex w-80 bg-white border-r border-slate-200 p-10 flex-col h-screen sticky top-0 shadow-sm z-30">
         <div className="flex items-center gap-4 mb-14">
           <div className="bg-indigo-600 text-white p-3 rounded-2xl shadow-lg shadow-indigo-100"><Wallet size={28}/></div>
-          <h1 className="text-2xl font-black tracking-tighter text-slate-900">HS_MANAGER_V3</h1>
+          <h1 className="text-2xl font-black tracking-tighter text-slate-900">HS_MANAGER_V4</h1>
         </div>
         <nav className="space-y-2 flex-grow">
           {[
@@ -234,7 +234,7 @@ const App = () => {
         <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-16 gap-8 px-4">
           <div className="animate-in slide-in-from-left duration-700">
             <div className="flex items-center gap-3 mb-2">
-              <span className="bg-indigo-100 text-indigo-700 px-4 py-1 rounded-full text-[10px] tracking-widest">HS_MANAGER_V3</span>
+              <span className="bg-indigo-100 text-indigo-700 px-4 py-1 rounded-full text-[10px] tracking-widest">HS_MANAGER_V4</span>
             </div>
             <h2 className="text-6xl font-black text-slate-900 tracking-tighter">{activeTab}</h2>
             <div className="flex items-center gap-3 mt-4">

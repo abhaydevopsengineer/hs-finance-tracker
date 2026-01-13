@@ -76,12 +76,13 @@ ${error?.stack || ""}
 
 
 
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 const appId = 'hs-expenses-manager-pro';
 
 const App = () => {
-  const apiKey = ""; 
-
-  // --- STATES ---
+  // --- 1. STATES ---
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -94,115 +95,74 @@ const App = () => {
   const [filterType, setFilterType] = useState('All');
   const [showSuccess, setShowSuccess] = useState(false);
   
-  // Data States
   const [transactions, setTransactions] = useState([]);
   const [debts, setDebts] = useState([]);
   const [goals, setGoals] = useState([]);
   const [accountRecords, setAccountRecords] = useState([]);
-  const [aiInsight, setAiInsight] = useState(null);
-  const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // Suggested Lists
   const defaultCategories = ['Salary', 'Rent', 'Grocery', 'Investment', 'Fuel', 'Shopping', 'Medical', 'Insurance', 'EMI', 'LIC', 'Policy', 'Transfer'];
   const defaultSubcategories = ['Monthly Pay', 'Milk', 'Petrol', 'Electricity', 'LIC Premium', 'HDFC EMI', 'Home Savings', 'Internal Transfer'];
   
-  const [categories, setCategories] = useState(defaultCategories);
-  const [subcategories, setSubcategories] = useState(defaultSubcategories);
-  const [accounts, setAccounts] = useState(['Bank', 'Cash', 'Credit Card', 'UPI', 'Wallet']);
+  const [categories] = useState(defaultCategories);
+  const [subcategories] = useState(defaultSubcategories);
+  const accounts = ['Bank', 'Cash', 'Credit Card', 'UPI', 'Wallet'];
   const entryTypes = ['Expense', 'Income', 'EMI_Payment', 'Goal_Deposit', 'Insurance_Premium', 'Investment', 'Balance_Transfer'];
 
-useEffect(() => {
-  signInAnonymously(auth).catch(console.error);
-  return onAuthStateChanged(auth, (u) => {
-    if (u) setUser(u);
-  });
-}, []);
+  // --- 2. AUTH & SYNC ---
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        await signInAnonymously(auth);
+      } catch (err) {
+        console.error("Auth Fail:", err.message);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+    return () => unsubscribe();
+  }, []);
 
-
-  // --- FIREBASE DATA SYNC ---
   useEffect(() => {
     if (!user) return;
     const sync = (collName, setter) => {
-  if (!user?.uid) return () => {};
-  const q = collection(db, 'artifacts', appId, 'users', user.uid, collName);
-  return onSnapshot(q, (snapshot) => {
-    setter(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
-  });
-};
-
-
+      const q = collection(db, 'artifacts', appId, 'users', user.uid, collName);
+      return onSnapshot(q, (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setter(data);
+      });
+    };
     const unsubTx = sync('transactions', setTransactions);
     const unsubDebt = sync('debts', setDebts);
     const unsubGoal = sync('goals', setGoals);
     const unsubAcc = sync('accountRecords', setAccountRecords);
     
-    const unsubCat = sync('categories', (data) => {
-      const names = data.map(d => d.name);
-      setCategories([...new Set([...defaultCategories, ...names])]);
-    });
-    const unsubSub = sync('subcategories', (data) => {
-      const names = data.map(d => d.name);
-      setSubcategories([...new Set([...defaultSubcategories, ...names])]);
-    });
-    
-    return () => { unsubTx(); unsubDebt(); unsubGoal(); unsubAcc(); unsubCat(); unsubSub(); };
+    return () => { unsubTx(); unsubDebt(); unsubGoal(); unsubAcc(); };
   }, [user]);
 
-  const initialFormState = {
-    date: new Date().toISOString().split('T')[0],
-    type: 'Expense',
-    category: 'Grocery',
-    subcategory: '', 
-    status: 'Done',
-    amount: '', 
-    account: 'Bank',
-    toAccount: '', 
-    paymentName: '',
-    note: '',
-    linkedId: ''
-  };
-
-  const initialDebtState = {
-    name: '',
-    type: 'Given',
-    total: '',
-    paid: '0',
-    dueDate: new Date().toISOString().split('T')[0]
-  };
-
-  const [formData, setFormData] = useState(initialFormState);
-  const [debtFormData, setDebtFormData] = useState(initialDebtState);
-  const [goalFormData, setGoalFormData] = useState({ name: '', target: '', current: '0', targetDate: '' });
-
-  // --- CALCULATIONS ---
+  // --- 3. CALCULATIONS ---
   const totals = useMemo(() => {
     const openingBal = accountRecords.reduce((acc, curr) => acc + Number(curr.balance || 0), 0);
-    const income = transactions.filter(t => t.type === 'Income').reduce((acc, curr) => acc + Number(curr.amount), 0);
-    const expense = transactions.filter(t => ['Expense', 'EMI_Payment', 'Insurance_Premium', 'Goal_Deposit', 'Investment'].includes(t.type)).reduce((acc, curr) => acc + Number(curr.amount), 0);
+    const income = transactions.filter(t => t.type === 'Income').reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+    const expense = transactions.filter(t => ['Expense', 'EMI_Payment', 'Insurance_Premium', 'Goal_Deposit', 'Investment'].includes(t.type)).reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+    const rec = debts.filter(d => d.type === 'Given').reduce((acc, curr) => acc + (Number(curr.total || 0) - Number(curr.paid || 0)), 0);
+    const pay = debts.filter(d => d.type === 'Taken' || d.type === 'Subscription').reduce((acc, curr) => acc + (Number(curr.total || 0) - Number(curr.paid || 0)), 0);
     
-    const rec = debts.filter(d => d.type === 'Given').reduce((acc, curr) => acc + (Number(curr.total) - Number(curr.paid)), 0);
-    const pay = debts.filter(d => d.type === 'Taken' || d.type === 'Subscription').reduce((acc, curr) => acc + (Number(curr.total) - Number(curr.paid)), 0);
-    
-    const dynamicAccounts = [...new Set([...accounts, ...transactions.map(t => t.account), ...transactions.filter(t => t.type === 'Balance_Transfer').map(t => t.toAccount), ...accountRecords.map(r => r.name)])].filter(Boolean);
+    const dynamicAccounts = [...new Set([...accounts, ...transactions.map(t => t.account), ...accountRecords.map(r => r.name)])].filter(Boolean);
     const accBreakdown = dynamicAccounts.map(acc => {
        const op = Number(accountRecords.find(r => r.name === acc)?.balance || 0);
-       const inc = transactions.filter(t => (t.account === acc && t.type === 'Income') || (t.toAccount === acc && t.type === 'Balance_Transfer')).reduce((acc_sum,curr_tx) => acc_sum + Number(curr_tx.amount), 0);
-       const exp = transactions.filter(t => (t.account === acc && (t.type !== 'Income' && t.type !== 'Balance_Transfer')) || (t.account === acc && t.type === 'Balance_Transfer')).reduce((acc_sum,curr_tx) => acc_sum + Number(curr_tx.amount), 0);
+       const inc = transactions.filter(t => (t.account === acc && t.type === 'Income') || (t.toAccount === acc && t.type === 'Balance_Transfer')).reduce((a,c) => a + Number(c.amount || 0), 0);
+       const exp = transactions.filter(t => (t.account === acc && (t.type !== 'Income' && t.type !== 'Balance_Transfer')) || (t.account === acc && t.type === 'Balance_Transfer')).reduce((a,c) => a + Number(c.amount || 0), 0);
        return { name: acc, balance: op + inc - exp };
     });
-
     return { balance: openingBal + income - expense, rec, pay, accBreakdown };
-  }, [transactions, debts, accountRecords, accounts]);
+  }, [transactions, debts, accountRecords]);
 
-  // Ledger Logic
   const nameLedgers = useMemo(() => {
     const map = {};
     debts.forEach(d => {
       const normKey = d.name.trim().toLowerCase();
-      if (!map[normKey]) {
-        map[normKey] = { name: d.name.trim(), receivables: 0, payables: 0, records: [], linkedTx: [] };
-      }
-      const bal = Number(d.total) - Number(d.paid);
+      if (!map[normKey]) map[normKey] = { name: d.name.trim(), receivables: 0, payables: 0, records: [], linkedTx: [] };
+      const bal = Number(d.total || 0) - Number(d.paid || 0);
       if (d.type === 'Given') map[normKey].receivables += bal;
       else if (d.type === 'Taken' || d.type === 'Subscription') map[normKey].payables += bal;
       map[normKey].records.push(d);
@@ -211,34 +171,18 @@ useEffect(() => {
       const txSubName = (t.subcategory || "").trim().toLowerCase();
       Object.keys(map).forEach(normKey => {
         const isExplicitlyLinked = t.linkedId && map[normKey].records.some(r => r.id === t.linkedId);
-        const isNameMatched = txSubName === normKey;
-        if (isExplicitlyLinked || isNameMatched) {
-          if (!map[normKey].linkedTx.some(existing => existing.id === t.id)) {
-            map[normKey].linkedTx.push(t);
-          }
+        if (isExplicitlyLinked || txSubName === normKey) {
+          if (!map[normKey].linkedTx.some(existing => existing.id === t.id)) map[normKey].linkedTx.push(t);
         }
       });
     });
-    Object.values(map).forEach(group => { group.linkedTx.sort((a, b) => new Date(b.date) - new Date(a.date)); });
+    Object.values(map).forEach(group => group.linkedTx.sort((a, b) => new Date(b.date) - new Date(a.date)));
     return Object.values(map);
   }, [debts, transactions]);
 
-  // Group Reports Logic
-  const groupedReports = useMemo(() => {
-    const groups = {};
-    transactions.forEach(t => {
-      const key = (t.subcategory || t.category || "General").trim().toLowerCase();
-      if (!groups[key]) groups[key] = { label: t.subcategory || t.category, total: 0, items: [] };
-      groups[key].total += Number(t.amount);
-      groups[key].items.push(t);
-    });
-    return Object.values(groups).sort((a,b) => b.total - a.total);
-  }, [transactions]);
-
-  // Goal Planner Logic
   const goalReport = useMemo(() => {
     return goals.map(g => {
-      const remaining = Number(g.target) - Number(g.current);
+      const remaining = Number(g.target || 0) - Number(g.current || 0);
       const diffMonths = Math.ceil(Math.abs(new Date(g.targetDate) - new Date()) / (1000 * 60 * 60 * 24 * 30.44)) || 1;
       const history = transactions.filter(t => t.linkedId === g.id).sort((a, b) => new Date(b.date) - new Date(a.date));
       return { ...g, remaining, diffMonths, monthlyRequired: remaining > 0 ? Math.ceil(remaining / diffMonths) : 0, history };
@@ -246,39 +190,36 @@ useEffect(() => {
   }, [goals, transactions]);
 
   const filteredTx = useMemo(() => {
-    return transactions
-      .filter(t => {
-        const searchStr = `${t.category || ""} ${t.subcategory || ""} ${t.note || ""} ${t.account || ""}`.toLowerCase();
-        const matchSearch = searchStr.includes(searchQuery.toLowerCase());
-        const matchType = filterType === 'All' || t.type === filterType;
-        return matchSearch && matchType;
-      })
-      .sort((a, b) => new Date(b.date) - new Date(a.date));
+    return transactions.filter(t => {
+      const searchStr = `${t.category || ""} ${t.subcategory || ""} ${t.note || ""}`.toLowerCase();
+      return searchStr.includes(searchQuery.toLowerCase()) && (filterType === 'All' || t.type === filterType);
+    }).sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [transactions, searchQuery, filterType]);
 
-  // --- ACTIONS ---
+  // --- 4. FORM STATES ---
+  const [formData, setFormData] = useState({ date: new Date().toISOString().split('T')[0], type: 'Expense', category: 'Grocery', subcategory: '', status: 'Done', amount: '', account: 'Bank', toAccount: '', paymentName: '', note: '', linkedId: '' });
+  const [debtFormData, setDebtFormData] = useState({ name: '', type: 'Given', total: '', paid: '0', dueDate: new Date().toISOString().split('T')[0] });
+  const [goalFormData, setGoalFormData] = useState({ name: '', target: '', current: '0', targetDate: '' });
+
+  // --- 5. ACTIONS ---
   const saveToCloud = async (coll, id, data) => { if (user) await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, coll, id.toString()), data); };
   const handleDelete = async (coll, id) => { if (user) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, coll, id.toString())); };
 
   const handleTransaction = async (e) => {
     e.preventDefault();
-    if (!user) return;
     const id = editingId || Date.now();
-    const amt = Number(formData.amount);
-    await saveToCloud('transactions', id, { ...formData, id, amount: amt });
+    await saveToCloud('transactions', id, { ...formData, id, amount: Number(formData.amount) });
     if (formData.linkedId) {
       const d = debts.find(x => x.id === formData.linkedId);
-      if(d) await saveToCloud('debts', d.id, { ...d, paid: Number(d.paid) + amt });
+      if(d) await saveToCloud('debts', d.id, { ...d, paid: Number(d.paid) + Number(formData.amount) });
       const g = goals.find(x => x.id === formData.linkedId);
-      if(g) await saveToCloud('goals', g.id, { ...g, current: Number(g.current) + amt });
+      if(g) await saveToCloud('goals', g.id, { ...g, current: Number(g.current) + Number(formData.amount) });
     }
-    if (formData.category && !categories.includes(formData.category)) await saveToCloud('categories', Date.now(), { name: formData.category });
-    if (formData.subcategory && !subcategories.includes(formData.subcategory)) await saveToCloud('subcategories', Date.now(), { name: formData.subcategory });
-    
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 1500);
-    if(editingId) { setIsModalOpen(false); setEditingId(null); }
-    setFormData(initialFormState);
+    setIsModalOpen(false);
+    setEditingId(null);
+    setFormData({ ...formData, amount: '', note: '', subcategory: '' });
   };
 
   const handleDebt = async (e) => {
@@ -286,7 +227,6 @@ useEffect(() => {
     const id = editingDebtId || Date.now();
     await saveToCloud('debts', id, { ...debtFormData, id, total: Number(debtFormData.total), paid: Number(debtFormData.paid) });
     setIsDebtModalOpen(false);
-    setDebtFormData(initialDebtState);
     setEditingDebtId(null);
   };
 
@@ -295,197 +235,279 @@ useEffect(() => {
     const id = editingGoalId || Date.now();
     await saveToCloud('goals', id, { ...goalFormData, id, target: Number(goalFormData.target), current: Number(goalFormData.current) });
     setIsGoalModalOpen(false);
-    setGoalFormData({ name: '', target: '', current: '0', targetDate: '' });
     setEditingGoalId(null);
   };
 
   const exportToSheets = () => {
-    let csv = "\ufeff"; 
-    csv += "Timeline,Entry Type,Main Category,Transaction Name,Account/Mode,Note,Status,Amount\n";
+    let csv = "\ufeffTimeline,Type,Category,Transaction,Account,Amount\n";
     transactions.forEach(t => {
-      const row = [t.date, t.type, t.category, `"${(t.subcategory || "").replace(/"/g, '""')}"`, t.account, `"${(t.note || "").replace(/"/g, '""')}"`, t.status, t.amount];
-      csv += row.join(",") + "\n";
+      csv += `${t.date},${t.type},${t.category},"${t.subcategory || ""}",${t.account},${t.amount}\n`;
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `HS_Expenses_Report_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `HS_Report_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
-    URL.revokeObjectURL(url);
   };
 
-  if (!user) {
-  return (
-    <div style={{ padding: 40, fontSize: 14 }}>
-      Firebase authenticated… loading data
+  // --- 6. RENDER LOGIC ---
+  if (!user) return (
+    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-800 p-6 text-center font-sans">
+      <div className="bg-white p-10 rounded-[3rem] shadow-2xl flex flex-col items-center border border-slate-100">
+        <Loader2 className="animate-spin mb-4 text-indigo-600" size={48}/>
+        <p className="font-black uppercase tracking-widest text-lg text-slate-800">HS Manager Pro</p>
+        <p className="text-slate-400 mt-2 text-sm font-medium">Connecting to secure cloud...</p>
+      </div>
     </div>
   );
-}
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex flex-col md:flex-row font-sans selection:bg-black selection:text-white text-gray-900">
+    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans text-slate-900 overflow-x-hidden selection:bg-indigo-100">
       
-      {/* QUICK ENTRY MODAL */}
-      <div className={`fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all ${isModalOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-        <div className="bg-white rounded-[2.5rem] w-full max-w-xl max-h-[95vh] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-300">
-          <div className="p-6 border-b flex justify-between items-center bg-gray-50/50 sticky top-0 z-10">
-            <h3 className="font-black text-lg uppercase tracking-tighter flex items-center gap-2 text-gray-800"><Cloud size={20} className="text-blue-500" /> Quick Add Transaction</h3>
-            <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full transition-all"><X size={24}/></button>
-          </div>
-          <div className="flex-grow overflow-y-auto p-8 space-y-6 custom-scrollbar">
-            {showSuccess && <div className="p-4 bg-green-50 text-green-700 rounded-2xl text-xs font-black border border-green-200 animate-in slide-in-from-top-2 flex items-center gap-2"><CheckCircle2 size={16}/> Saved Successfully!</div>}
-            <form id="tx-form" onSubmit={handleTransaction} className="space-y-6 pb-4">
-               <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-gray-400 ml-1 tracking-widest">Entry Date</label><input type="date" required value={formData.date} onChange={e=>setFormData({...formData, date:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-3.5 rounded-2xl text-xs font-bold outline-none focus:border-black focus:bg-white transition-all" /></div>
-                  <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-blue-600 ml-1 tracking-widest">Entry Type</label><input list="types" placeholder="Income, Expense..." required value={formData.type} onChange={e=>setFormData({...formData, type:e.target.value, linkedId:''})} className="w-full border-2 border-gray-100 bg-gray-50 p-3.5 rounded-2xl text-xs font-black outline-none focus:border-black focus:bg-white transition-all" /></div>
-               </div>
-               {formData.type === 'Balance_Transfer' ? (
-                 <div className="p-5 bg-orange-50 rounded-[2rem] border-2 border-orange-100 animate-in fade-in space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                       <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-orange-600 tracking-widest">From Account</label><input list="accs" required value={formData.account} onChange={e=>setFormData({...formData, account:e.target.value})} placeholder="Source" className="w-full border-2 border-white p-3.5 rounded-xl text-xs font-black outline-none focus:border-orange-500" /></div>
-                       <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-orange-600 tracking-widest">To Account</label><input list="accs" required value={formData.toAccount} onChange={e=>setFormData({...formData, toAccount:e.target.value})} placeholder="Destination" className="w-full border-2 border-white p-3.5 rounded-xl text-xs font-black outline-none focus:border-orange-500" /></div>
-                    </div>
-                 </div>
-               ) : (
-                 <div className="grid grid-cols-2 gap-4 animate-in fade-in">
-                    <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-gray-400 ml-1 tracking-widest">Main Category</label><input list="cats" placeholder="Food, Rent..." required value={formData.category} onChange={e=>setFormData({...formData, category:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-3.5 rounded-2xl text-xs font-bold outline-none focus:border-black focus:bg-white transition-all" /></div>
-                    <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-gray-400 ml-1 tracking-widest">Transaction Name (Sub)</label><input list="subs" placeholder="Milk, LIC..." required value={formData.subcategory} onChange={e=>setFormData({...formData, subcategory:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-3.5 rounded-2xl text-xs font-bold outline-none focus:border-black focus:bg-white transition-all" /></div>
-                 </div>
-               )}
-               <div className="grid grid-cols-2 gap-4">
-                  {formData.type !== 'Balance_Transfer' && (<div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-orange-600 ml-1 tracking-widest">Paid Via (Mode)</label><input list="accs" required value={formData.account} onChange={e=>setFormData({...formData, account:e.target.value})} placeholder="UPI, Cash..." className="w-full border-2 border-gray-100 bg-gray-50 p-3.5 rounded-2xl text-xs font-black outline-none focus:border-black focus:bg-white transition-all" /></div>)}
-                  <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-orange-600 ml-1 tracking-widest">Bank / UPI Detail (Sub)</label><input placeholder="SBI, PhonePe..." value={formData.paymentName} onChange={e=>setFormData({...formData, paymentName:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-3.5 rounded-2xl text-xs font-bold outline-none focus:border-black focus:bg-white transition-all" /></div>
-               </div>
-               <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-purple-600 ml-1 tracking-widest">Tx Status</label><select value={formData.status} onChange={e=>setFormData({...formData, status:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-3.5 rounded-2xl text-xs font-black outline-none focus:border-black focus:bg-white transition-all"><option value="Done">Done ✅</option><option value="Hold">Hold ⏸</option><option value="Incomplete">Fail ❌</option></select></div>
-                  <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-gray-400 ml-1 tracking-widest">Amount (₹)</label><div className="relative"><span className="absolute left-4 top-3.5 text-xs text-gray-400 font-black italic">₹</span><input type="number" required value={formData.amount} onChange={e=>setFormData({...formData, amount:e.target.value})} placeholder="0.00" className="w-full pl-8 border-2 border-gray-100 bg-gray-50 p-3.5 rounded-2xl text-sm font-black outline-none focus:border-black focus:bg-white transition-all" /></div></div>
-               </div>
-               {['EMI_Payment', 'Income', 'Expense', 'Insurance_Premium', 'Goal_Deposit'].includes(formData.type) && (
-                 <div className="space-y-1.5 p-5 bg-blue-50/50 rounded-[2rem] border-2 border-blue-50"><label className="text-[10px] font-black uppercase text-blue-600 tracking-widest ml-1">Link to Master Record (Relation)</label><select value={formData.linkedId} onChange={e=>setFormData({...formData, linkedId:e.target.value})} className="w-full border-2 border-blue-100 p-4 rounded-2xl text-xs font-black bg-white outline-none focus:border-blue-500 shadow-sm transition-all"><option value="">-- No link (Independent Tx) --</option>{debts.map(d=><option key={d.id} value={d.id}>{d.name} ({d.type}) - Bal: ₹{Number(d.total) - Number(d.paid)}</option>)}{goals.map(g=><option key={g.id} value={g.id}>Goal: {g.name} (Need: ₹{Number(g.target)-Number(g.current)})</option>)}</select></div>
-               )}
-               <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-gray-400 ml-1 tracking-widest">Extra Remarks</label><textarea placeholder="Write details here..." value={formData.note} onChange={e=>setFormData({...formData, note:e.target.value})} className="w-full border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-bold outline-none focus:border-black focus:bg-white transition-all resize-none" rows="2" /></div>
-            </form>
-          </div>
-          <div className="p-6 border-t flex gap-4 bg-gray-50 sticky bottom-0"><button onClick={()=>setIsModalOpen(false)} className="flex-1 border-2 border-gray-200 p-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 hover:bg-white transition-all">Back</button><button form="tx-form" type="submit" className="flex-[2] bg-black text-white p-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl active:scale-95 transition-all">Submit Entry</button></div>
+      {/* SIDEBAR (Desktop) */}
+      <div className="hidden md:flex w-72 bg-white border-r border-slate-200 p-6 flex-col h-screen sticky top-0 shadow-sm z-30">
+        <div className="flex items-center gap-3 mb-10 px-2">
+          <div className="bg-indigo-600 text-white p-2.5 rounded-2xl shadow-lg shadow-indigo-100"><Wallet size={24}/></div>
+          <h1 className="text-xl font-black tracking-tight text-slate-800 uppercase">HS_Manager_v1</h1>
         </div>
-      </div>
-
-      {/* SIDEBAR */}
-      <div className="hidden md:flex w-72 bg-white border-r p-8 flex-col h-screen sticky top-0 transition-all shadow-sm">
-        <div className="flex items-center gap-3 mb-10">
-          <div className="bg-black text-white p-2 rounded-xl shadow-lg"><Wallet size={24}/></div>
-          <h1 className="text-xl font-black uppercase tracking-tighter">HS_Manager</h1>
-        </div>
-        <nav className="space-y-3 flex-grow font-bold">
+        <nav className="space-y-1 flex-grow">
           {[
-            { id: 'dashboard', icon: <LayoutDashboard size={20}/> },
-            { id: 'history', icon: <ArrowRightLeft size={20}/> },
-            { id: 'debts', icon: <UserCheck size={20}/> },
-            { id: 'goals', icon: <Target size={20}/> },
-            { id: 'report', icon: <FileText size={20}/> },
-            { id: 'settings', icon: <Settings size={20}/> }
+            { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20}/> },
+            { id: 'history', label: 'History', icon: <ArrowRightLeft size={20}/> },
+            { id: 'debts', label: 'Hisab (Debts)', icon: <UserCheck size={20}/> },
+            { id: 'goals', label: 'Goals', icon: <Target size={20}/> },
+            { id: 'settings', label: 'Settings', icon: <Settings size={20}/> }
           ].map(tab => (
             <button 
               key={tab.id} 
               onClick={()=>setActiveTab(tab.id)} 
-              className={`w-full flex items-center gap-4 p-4 rounded-2xl text-sm transition-all ${activeTab === tab.id ? 'bg-black text-white shadow-xl translate-x-2' : 'text-gray-400 hover:bg-gray-50'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-bold transition-all duration-200 ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-100' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
             >
-              {tab.icon}
-              <span className="capitalize">{tab.id}</span>
+              {tab.icon} <span className="capitalize">{tab.label}</span>
             </button>
           ))}
         </nav>
-        <button onClick={exportToSheets} className="w-full bg-green-50 text-green-700 p-4 rounded-2xl text-[10px] font-black border-2 border-green-100 flex items-center justify-center gap-2 hover:bg-green-100 transition-all uppercase tracking-widest"><FileSpreadsheet size={16}/> EXPORT REPORT</button>
+        <div className="pt-6 border-t border-slate-100">
+          <button onClick={exportToSheets} className="w-full bg-slate-900 text-white p-4 rounded-2xl text-xs font-black border border-slate-800 flex items-center justify-center gap-2 hover:bg-slate-800 transition-all uppercase tracking-widest shadow-lg shadow-slate-100"><FileSpreadsheet size={16}/> EXPORT REPORT</button>
+        </div>
       </div>
 
-      <main className="flex-grow p-4 md:p-10 max-w-7xl mx-auto w-full pb-32 overflow-x-hidden">
-        <header className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-10">
-          <div><h2 className="text-4xl font-black text-gray-900 tracking-tighter uppercase">{activeTab} View</h2><p className="text-gray-400 text-[10px] font-black tracking-widest mt-1 uppercase tracking-widest">HS_Manager PRO • Real-time Sync</p></div>
-          <button onClick={()=>{setEditingId(null); setFormData(initialFormState); setIsModalOpen(true);}} className="bg-black text-white px-8 py-4 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-3"><PlusCircle size={18}/> Quick Entry</button>
+      {/* MAIN CONTENT */}
+      <main className="flex-grow p-4 md:p-8 max-w-7xl mx-auto w-full pb-32">
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-10 gap-4 px-2">
+          <div className="animate-in slide-in-from-left duration-500">
+            <h2 className="text-4xl font-black text-slate-800 tracking-tighter uppercase">{activeTab}</h2>
+            <div className="flex items-center gap-2 mt-1">
+              <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+              <p className="text-slate-400 text-[10px] font-black tracking-[0.2em] uppercase">Status: Syncing Live</p>
+            </div>
+          </div>
+          <button 
+            onClick={()=>{setEditingId(null); setIsModalOpen(true);}} 
+            className="w-full sm:w-auto bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.15em] shadow-2xl shadow-indigo-100 hover:bg-indigo-700 hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-3"
+          >
+            <PlusCircle size={20}/> Quick Entry
+          </button>
         </header>
 
+        {/* DASHBOARD VIEW */}
         {activeTab === 'dashboard' && (
-          <div className="space-y-10 animate-in fade-in">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-black uppercase tracking-widest">
-              <div className="bg-white p-8 rounded-[2.5rem] border-l-[12px] border-blue-500 shadow-sm transition-all hover:scale-[1.02]"><span className="text-[10px] text-gray-300">Net Flow</span><h3 className="text-3xl text-gray-900 mt-2">₹{totals.balance.toLocaleString()}</h3></div>
-              <div className="bg-white p-8 rounded-[2.5rem] border-l-[12px] border-green-500 shadow-sm transition-all hover:scale-[1.02]"><span className="text-[10px] text-gray-300">Receivables</span><h3 className="text-3xl text-green-600 mt-2">₹{totals.rec.toLocaleString()}</h3></div>
-              <div className="bg-white p-8 rounded-[2.5rem] border-l-[12px] border-red-500 shadow-sm transition-all hover:scale-[1.02]"><span className="text-[10px] text-gray-300">Payables</span><h3 className="text-3xl text-red-600 mt-2">₹{totals.pay.toLocaleString()}</h3></div>
+          <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
+            {/* Top Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100 flex flex-col items-center text-center relative overflow-hidden group">
+                <div className="bg-indigo-50 text-indigo-600 p-4 rounded-3xl mb-4 group-hover:scale-110 transition-transform"><Wallet size={28}/></div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Net Flow</p>
+                <h3 className="text-3xl font-black text-slate-800 mt-2">₹{totals.balance.toLocaleString()}</h3>
+              </div>
+              <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100 flex flex-col items-center text-center relative overflow-hidden group">
+                <div className="bg-emerald-50 text-emerald-600 p-4 rounded-3xl mb-4 group-hover:scale-110 transition-transform"><ArrowDownLeft size={28}/></div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Receivables</p>
+                <h3 className="text-3xl text-emerald-600 font-black mt-2">₹{totals.rec.toLocaleString()}</h3>
+              </div>
+              <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100 flex flex-col items-center text-center relative overflow-hidden group">
+                <div className="bg-rose-50 text-rose-600 p-4 rounded-3xl mb-4 group-hover:scale-110 transition-transform"><ArrowUpRight size={28}/></div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Payables</p>
+                <h3 className="text-3xl text-rose-600 font-black mt-2">₹{totals.pay.toLocaleString()}</h3>
+              </div>
             </div>
-            <div className="bg-white p-8 rounded-[3.5rem] border shadow-sm transition-all">
-               <h4 className="font-black text-xl uppercase mb-6 flex items-center gap-3 tracking-tighter text-gray-800"><Database className="text-orange-500" size={24}/> Account Status</h4>
-               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+
+            {/* Account Status Grid */}
+            <div className="bg-white p-8 md:p-10 rounded-[3.5rem] shadow-sm border border-slate-100">
+               <h4 className="font-black text-xl text-slate-800 flex items-center gap-3 mb-8 uppercase tracking-tighter"><Database className="text-indigo-500" size={24}/> Wallet Status</h4>
+               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
                   {totals.accBreakdown.map(acc => (
-                    <div key={acc.name} className="p-4 bg-gray-50 rounded-2xl border-2 border-transparent hover:border-black transition-all group">
-                       <div className="flex justify-between items-start"><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest group-hover:text-gray-900 transition-colors">{acc.name}</p>{acc.name.toLowerCase().includes('card') ? <CardIcon size={12} className="text-red-400"/> : <Banknote size={12} className="text-green-400"/>}</div>
-                       <p className={`text-xl font-black mt-1 ${acc.balance < 0 ? 'text-red-500' : 'text-gray-900'}`}>₹{acc.balance.toLocaleString()}</p>
+                    <div key={acc.name} className="p-6 bg-slate-50 rounded-[2rem] border-2 border-transparent hover:border-indigo-100 hover:bg-white hover:shadow-xl hover:shadow-indigo-50/50 transition-all group">
+                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest group-hover:text-indigo-500">{acc.name}</p>
+                       <p className={`text-xl font-black mt-2 ${acc.balance < 0 ? 'text-rose-500' : 'text-slate-800'}`}>₹{acc.balance.toLocaleString()}</p>
                     </div>
                   ))}
                </div>
             </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-               <div className="bg-white p-10 rounded-[3rem] border shadow-sm border-t-[12px] border-t-red-500">
-                  <h4 className="font-black text-xl uppercase mb-6 flex items-center gap-3 tracking-tighter text-gray-800"><BellRing className="text-red-500" size={22}/> Active Loans & EMI</h4>
-                  <div className="space-y-6">
-                    {debts.filter(d => d.type === 'Taken' && (d.total - d.paid) > 0).map(d => (
-                      <div key={d.id} className="p-4 border-b border-gray-100 flex justify-between items-center group hover:bg-gray-50 rounded-xl transition-all">
-                        <div><p className="font-black text-xs uppercase text-gray-900">{d.name}</p><p className="text-[9px] font-bold text-gray-400 mt-1 flex items-center gap-1"><Clock size={10}/> Due: {d.dueDate}</p></div>
-                        <p className="font-black text-sm text-red-600">₹{(Number(d.total) - Number(d.paid)).toLocaleString()}</p>
+               <div className="bg-white p-10 rounded-[3.5rem] shadow-sm border border-slate-100 border-t-[10px] border-t-rose-500">
+                  <h4 className="font-black text-xl text-slate-800 flex items-center gap-3 mb-8 uppercase tracking-tighter"><BellRing className="text-rose-500" size={22}/> Active Dues</h4>
+                  <div className="space-y-4">
+                    {debts.filter(d => d.type === 'Taken' && (Number(d.total)-Number(d.paid)) > 0).map(d => (
+                      <div key={d.id} className="p-5 bg-slate-50 rounded-[2rem] flex justify-between items-center hover:bg-white hover:shadow-lg transition-all border border-transparent hover:border-slate-100">
+                        <div>
+                          <p className="text-xs font-black text-slate-800 uppercase tracking-wide">{d.name}</p>
+                          <p className="text-[9px] text-slate-400 font-bold flex items-center gap-1 mt-1 uppercase"><Clock size={12}/> Due: {d.dueDate}</p>
+                        </div>
+                        <p className="text-sm font-black text-rose-600">₹{(Number(d.total) - Number(d.paid)).toLocaleString()}</p>
                       </div>
                     ))}
-                  </div>
-               </div>
-               <div className="bg-white p-10 rounded-[3rem] border shadow-sm border-t-[12px] border-t-blue-500">
-                  <h4 className="font-black text-xl uppercase mb-6 flex items-center gap-3 tracking-tighter text-gray-800"><CalendarDays className="text-blue-500" size={22}/> LIC & Subscriptions</h4>
-                  <div className="space-y-6">
-                    {debts.filter(d => d.type === 'Subscription' && (d.total - d.paid) > 0).map(d => (
-                      <div key={d.id} className="p-4 border-b border-gray-100 flex justify-between items-center">
-                        <div><p className="font-black text-xs uppercase text-gray-900">{d.name}</p><p className="text-[9px] font-bold text-gray-400 mt-1">Expiry: {d.dueDate}</p></div>
-                        <p className="font-black text-sm text-blue-600">₹{(Number(d.total) - Number(d.paid)).toLocaleString()}</p>
+                    {debts.filter(d => d.type === 'Taken' && (Number(d.total)-Number(d.paid)) > 0).length === 0 && (
+                      <div className="py-12 text-center opacity-30">
+                        <CheckCircle2 size={40} className="mx-auto text-emerald-500 mb-3"/>
+                        <p className="text-[10px] font-black uppercase tracking-widest">Everything is cleared</p>
                       </div>
-                    ))}
+                    )}
                   </div>
                </div>
-            </div>
-            <div className="bg-white p-10 rounded-[3.5rem] border shadow-sm border-t-[12px] border-t-purple-500">
-               <h4 className="font-black text-2xl uppercase tracking-tighter flex items-center gap-3 text-gray-800 mb-8"><TrendingUp className="text-purple-500" size={28}/> Future Goal Planner</h4>
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                  {goalReport.map(g => (
-                    <div key={g.id} className="p-6 bg-gray-50 rounded-[2.5rem] border-2 border-transparent hover:border-purple-200 transition-all group">
-                       <div className="flex justify-between items-start mb-4"><h5 className="font-black text-lg uppercase text-gray-900 tracking-tighter">{g.name}</h5><TrendingUp size={20} className="text-gray-300"/></div>
-                       <div className="space-y-4 font-black uppercase">
-                          <div className="flex justify-between items-center"><p className="text-[9px] text-gray-400">Months To Go</p><p className="text-sm text-gray-900">{g.diffMonths}</p></div>
-                          <div className="p-4 bg-white rounded-2xl border-2 border-purple-50 text-center">
-                             <p className="text-[8px] text-purple-400 mb-1">Monthly Plan</p>
-                             <p className="text-2xl text-purple-600 tracking-tighter">₹{g.monthlyRequired.toLocaleString()}</p>
+
+               <div className="bg-white p-10 rounded-[3.5rem] shadow-sm border border-slate-100 border-t-[10px] border-t-indigo-500">
+                  <h4 className="font-black text-xl text-slate-800 flex items-center gap-3 mb-8 uppercase tracking-tighter"><Target className="text-indigo-500" size={22}/> Active Goals</h4>
+                  <div className="space-y-5">
+                    {goalReport.slice(0, 3).map(g => (
+                      <div key={g.id} className="group">
+                        <div className="flex justify-between items-end mb-2 px-1">
+                          <div>
+                            <p className="text-xs font-black text-slate-700 uppercase tracking-wide">{g.name}</p>
+                            <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">{g.diffMonths} months to go</p>
                           </div>
-                       </div>
-                    </div>
-                  ))}
+                          <p className="text-xs font-black text-indigo-600">{Math.round((Number(g.current)/Number(g.target))*100)}%</p>
+                        </div>
+                        <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200 p-[1px]">
+                          <div className="h-full bg-indigo-600 transition-all duration-[1500ms] rounded-full shadow-sm" style={{width: `${Math.min((g.current/g.target)*100, 100)}%`}}></div>
+                        </div>
+                      </div>
+                    ))}
+                    {goalReport.length === 0 && (
+                      <div className="py-12 text-center opacity-30">
+                        <Target size={40} className="mx-auto text-indigo-500 mb-3"/>
+                        <p className="text-[10px] font-black uppercase tracking-widest">No goals planned</p>
+                      </div>
+                    )}
+                  </div>
                </div>
             </div>
           </div>
         )}
 
-        {/* ... Rest of the views (debts, goals, report, settings, history) ... */}
+        {/* HISTORY VIEW */}
+        {activeTab === 'history' && (
+          <div className="bg-white rounded-[3rem] shadow-sm border border-slate-100 overflow-hidden animate-in slide-in-from-bottom-5 duration-500">
+            <div className="p-8 border-b border-slate-50 flex flex-col md:flex-row gap-4 bg-slate-50/20 items-center">
+               <div className="relative flex-grow w-full max-w-md">
+                  <Search size={18} className="absolute left-4 top-3.5 text-slate-400"/>
+                  <input 
+                    value={searchQuery} 
+                    onChange={e=>setSearchQuery(e.target.value)} 
+                    placeholder="Search master ledger..." 
+                    className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-100 rounded-2xl text-xs font-bold outline-none focus:border-indigo-500 transition-all"
+                  />
+               </div>
+               <select 
+                 value={filterType} 
+                 onChange={e=>setFilterType(e.target.value)} 
+                 className="w-full md:w-auto px-6 py-3 bg-white border-2 border-slate-100 rounded-2xl text-xs font-black uppercase tracking-widest text-slate-700 outline-none"
+               >
+                  <option value="All">All Flow</option>
+                  <option value="Income">Total Income</option>
+                  <option value="Expense">Total Expense</option>
+               </select>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[600px] font-black uppercase">
+                <thead>
+                  <tr className="bg-slate-50 text-[10px] text-slate-400 tracking-[0.2em] border-b border-slate-100">
+                    <th className="p-6">Timeline</th>
+                    <th className="p-6">Details</th>
+                    <th className="p-6 text-right">Amount</th>
+                    <th className="p-6 text-center">Manage</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {filteredTx.map(t => (
+                    <tr key={t.id} className="hover:bg-slate-50/80 transition-all group">
+                      <td className="p-6 text-[11px] text-slate-400 tracking-tighter">{t.date}</td>
+                      <td className="p-6">
+                        <p className="text-xs font-black text-slate-800 tracking-tight">{t.subcategory || t.category}</p>
+                        <p className="text-[9px] text-indigo-500 font-bold mt-1 tracking-widest">{t.account}</p>
+                      </td>
+                      <td className="p-6 text-right">
+                        <span className={`text-base font-black ${t.type === 'Income' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {t.type === 'Income' ? '+' : '-'}₹{Number(t.amount).toLocaleString()}
+                        </span>
+                      </td>
+                      <td className="p-6">
+                        <div className="flex justify-center gap-3">
+                          <button onClick={()=>{setFormData({...t, amount:t.amount.toString()}); setEditingId(t.id); setIsModalOpen(true);}} className="p-2.5 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><Pencil size={14}/></button>
+                          <button onClick={()=>handleDelete('transactions', t.id)} className="p-2.5 text-rose-600 bg-rose-50 rounded-xl hover:bg-rose-600 hover:text-white transition-all"><Trash2 size={14}/></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* DEBTS VIEW */}
         {activeTab === 'debts' && (
-          <div className="space-y-8 animate-in slide-in-from-bottom-5">
-             <div className="flex justify-between items-center bg-white p-8 rounded-[2.5rem] border shadow-sm">
-                <div><h3 className="font-black text-xl uppercase tracking-tighter text-gray-900">Name Based Ledgers</h3><p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">Grouped Transactions</p></div>
-                <button onClick={()=>{setEditingDebtId(null); setIsDebtModalOpen(true);}} className="bg-black text-white px-10 py-4 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-95 transition-all">New Master Entry</button>
+          <div className="space-y-8 animate-in slide-in-from-bottom-5 duration-500">
+             <div className="flex justify-between items-center bg-white p-8 rounded-[3.5rem] shadow-sm border border-slate-100">
+                <h3 className="text-2xl font-black text-slate-800 tracking-tight uppercase px-2">Net Hisab Ledgers</h3>
+                <button onClick={()=>{setEditingDebtId(null); setIsDebtModalOpen(true);}} className="bg-slate-900 text-white px-8 py-4 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl active:scale-95 transition-all">New Master Entry</button>
              </div>
-             <div className="space-y-12">
+             
+             <div className="grid grid-cols-1 gap-10">
                {nameLedgers.map(ledger => {
                  const net = ledger.receivables - ledger.payables;
                  return (
-                   <div key={ledger.name} className="bg-white rounded-[3.5rem] border shadow-md overflow-hidden transition-all hover:shadow-2xl font-black uppercase">
-                    <div className="p-10 border-b bg-gray-50/50 flex flex-col md:flex-row justify-between items-center gap-6">
-                       <div><h2 className="text-4xl tracking-tighter text-gray-900">{ledger.name}</h2><div className={`mt-3 flex items-center gap-3 px-6 py-3 rounded-2xl border-2 text-lg tracking-widest shadow-sm ${net >= 0 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}><ArrowRightLeft size={20}/> Net Balance: ₹{Math.abs(net).toLocaleString()} <span>{net >= 0 ? '(Lena Hai)' : '(Dena Hai)'}</span></div></div>
-                       <div className="flex gap-8 text-center uppercase font-black tracking-widest font-black uppercase tracking-widest"><div className="bg-green-50/50 p-4 rounded-3xl border border-green-100 min-w-[120px]"><p className="text-[10px] text-gray-400 mb-1 flex items-center gap-1 justify-center"><ArrowDownLeft size={12}/> Lena Hai</p><p className="text-2xl text-green-600 font-black">₹{ledger.receivables.toLocaleString()}</p></div><div className="bg-red-50/50 p-4 rounded-3xl border border-red-100 min-w-[120px]"><p className="text-[10px] text-gray-400 mb-1 flex items-center gap-1 justify-center"><ArrowUpRight size={12}/> Dena Hai</p><p className="text-2xl text-red-600 font-black">₹{ledger.payables.toLocaleString()}</p></div></div>
+                   <div key={ledger.name} className="bg-white rounded-[4rem] shadow-sm border border-slate-100 overflow-hidden hover:shadow-2xl transition-all duration-500 font-black uppercase">
+                    <div className="p-10 bg-slate-50/50 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-10">
+                       <div className="text-center md:text-left">
+                          <h2 className="text-5xl tracking-tighter text-slate-800">{ledger.name}</h2>
+                          <div className={`mt-5 flex items-center gap-4 px-8 py-3.5 rounded-2xl border-2 text-lg tracking-widest ${net >= 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-emerald-100 shadow-md' : 'bg-rose-50 border-rose-200 text-rose-700 shadow-rose-100 shadow-md'}`}>
+                            <NetIcon size={24}/> Net Hisab: ₹{Math.abs(net).toLocaleString()} 
+                            <span className="text-xs opacity-60 ml-2">{net >= 0 ? 'To Receive' : 'To Pay'}</span>
+                          </div>
+                       </div>
+                       <div className="flex gap-8">
+                          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 min-w-[160px] text-center">
+                             <p className="text-[10px] text-slate-400 mb-2 tracking-widest">Receivable</p>
+                             <p className="text-3xl text-emerald-600">₹{ledger.receivables.toLocaleString()}</p>
+                          </div>
+                          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 min-w-[160px] text-center">
+                             <p className="text-[10px] text-slate-400 mb-2 tracking-widest">Payable</p>
+                             <p className="text-3xl text-rose-600">₹{ledger.payables.toLocaleString()}</p>
+                          </div>
+                       </div>
                     </div>
-                    <div className="p-10 grid grid-cols-1 lg:grid-cols-2 gap-10 font-black uppercase">
-                       <div><h4 className="text-xs text-gray-400 tracking-[0.2em] mb-4">Account Master Records</h4><div className="space-y-3">{ledger.records.map(r => (<div key={r.id} className={`p-5 rounded-2xl border-2 flex justify-between items-center group transition-all hover:bg-gray-50 ${r.type==='Given'?'border-green-100 bg-green-50/10':'border-red-100 bg-red-50/10'}`}><div><p className="text-[10px] text-gray-400 tracking-tighter">{r.dueDate} • {r.type}</p><p className="font-black text-sm text-gray-900 tracking-tighter">Initial: ₹{Number(r.total).toLocaleString()}</p></div><div className="flex items-center gap-4 text-right"><div><p className="font-black text-sm text-gray-900 tracking-tighter">Bal: ₹{(Number(r.total) - Number(r.paid)).toLocaleString()}</p><p className="text-[8px] font-bold text-gray-400 tracking-widest">Left</p></div><button onClick={()=>handleDelete('debts', r.id)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 p-2"><Trash2 size={16}/></button></div></div>))}</div></div>
-                       <div><h4 className="text-xs text-gray-400 tracking-[0.2em] mb-4 flex items-center gap-2 tracking-widest border-b pb-2"><History size={16}/> Payments history</h4><div className="space-y-3 max-h-[350px] overflow-y-auto custom-scrollbar pr-3">{ledger.linkedTx.map(t => (<div key={t.id} className="flex justify-between items-center p-4 border shadow-sm bg-white rounded-2xl border-transparent hover:border-gray-200 transition-all group font-black"><div className="flex items-center gap-3"><div className={`p-2 rounded-lg ${t.type === 'Income' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}><Banknote size={14}/></div><div><p className="uppercase text-[10px] text-gray-900 tracking-tighter">{t.date}</p><p className="text-[9px] text-gray-400 uppercase font-bold">{t.account} • {t.type === 'Income' ? 'Got Back' : 'Paid'}</p></div></div><p className={`font-black text-sm ${t.type === 'Income' ? 'text-green-600' : 'text-red-600'}`}>{t.type === 'Income' ? '+' : '-'} ₹{t.amount.toLocaleString()}</p></div>))}</div></div>
+                    <div className="p-10 bg-white">
+                       <h4 className="text-[11px] text-slate-400 tracking-[0.3em] mb-8 flex items-center gap-3"><History size={20}/> Direct Activity History</h4>
+                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                          {ledger.linkedTx.slice(0, 9).map(t => (
+                            <div key={t.id} className="flex justify-between items-center p-6 bg-slate-50 rounded-[2.5rem] transition-all hover:bg-white hover:shadow-xl hover:shadow-slate-100/50 group border border-transparent hover:border-slate-100">
+                               <div className="flex items-center gap-5">
+                                  <div className={`p-3 rounded-2xl ${t.type === 'Income' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}><Banknote size={18}/></div>
+                                  <div>
+                                     <p className="text-[10px] font-bold text-slate-400 mb-0.5">{t.date}</p>
+                                     <p className="text-xs font-black text-slate-800 tracking-tight">{t.account}</p>
+                                  </div>
+                               </div>
+                               <p className={`text-sm font-black ${t.type === 'Income' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                 {t.type === 'Income' ? '+' : '-'}₹{t.amount.toLocaleString()}
+                               </p>
+                            </div>
+                          ))}
+                          {ledger.linkedTx.length === 0 && <p className="col-span-full py-16 text-center text-slate-300 font-bold uppercase text-[11px] tracking-[0.3em]">No linked transactions yet</p>}
+                       </div>
                     </div>
                  </div>
                );})}
@@ -493,32 +515,49 @@ useEffect(() => {
           </div>
         )}
 
+        {/* GOALS VIEW */}
         {activeTab === 'goals' && (
-          <div className="space-y-10 animate-in slide-in-from-bottom-5">
-            <div className="flex justify-between items-center bg-white p-8 rounded-[2.5rem] border shadow-sm transition-all hover:shadow-md">
-               <div><h3 className="font-black text-xl uppercase tracking-tighter text-gray-900">Savings Goals & Progress Bar</h3><p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">Goal Saving Timeline</p></div>
-               <button onClick={()=>setIsGoalModalOpen(true)} className="bg-black text-white px-10 py-4 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-95 transition-all font-black"><PlusCircle size={18} className="inline mr-2"/> Setup New Goal</button>
+          <div className="space-y-12 animate-in slide-in-from-bottom-5 duration-500 font-sans px-2">
+            <div className="flex justify-between items-center bg-white p-10 rounded-[3.5rem] shadow-sm border border-slate-100">
+               <h3 className="text-2xl font-black text-slate-800 tracking-tight uppercase px-2">Savings Goals</h3>
+               <button onClick={()=>setIsGoalModalOpen(true)} className="bg-indigo-600 text-white px-10 py-4 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center gap-3"><PlusCircle size={18}/> New Target</button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
               {goalReport.map(g => (
-                <div key={g.id} className="bg-white p-10 rounded-[3rem] border shadow-lg group relative overflow-hidden transition-all hover:shadow-2xl">
-                   <div className="absolute top-8 right-8 flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                      <button onClick={() => { setGoalFormData({ name: g.name, target: g.target, current: g.current, targetDate: g.targetDate }); setEditingGoalId(g.id); setIsGoalModalOpen(true); }} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all"><Pencil size={18}/></button>
-                      <button onClick={()=>handleDelete('goals', g.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={18}/></button>
+                <div key={g.id} className="bg-white p-10 rounded-[4rem] shadow-sm border border-slate-100 group relative overflow-hidden transition-all duration-500 hover:shadow-2xl">
+                   <div className="absolute top-10 right-10 flex gap-4 opacity-0 group-hover:opacity-100 transition-all">
+                      <button onClick={()=>{setGoalFormData(g); setEditingGoalId(g.id); setIsGoalModalOpen(true);}} className="p-3 text-indigo-600 bg-indigo-50 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all"><Pencil size={20}/></button>
+                      <button onClick={()=>handleDelete('goals', g.id)} className="p-3 text-rose-600 bg-rose-50 rounded-2xl hover:bg-rose-600 hover:text-white transition-all"><Trash2 size={20}/></button>
                    </div>
-                   <div className="flex justify-between items-start mb-8 font-black uppercase">
-                     <div><h3 className="text-3xl tracking-tighter text-gray-900">{g.name}</h3><p className="text-xs text-purple-500 tracking-widest">Date: {g.targetDate}</p></div>
-                     <div className="text-right"><p className="text-3xl text-blue-600 tracking-tight">{Math.round((Number(g.current)/Number(g.target))*100)}%</p><p className="text-[10px] text-gray-300">Achieved</p></div>
+                   <div className="flex justify-between items-start mb-12 font-black uppercase tracking-tighter px-2">
+                     <div>
+                        <h3 className="text-4xl text-slate-800">{g.name}</h3>
+                        <p className="text-sm text-indigo-500 mt-2 flex items-center gap-2 font-black tracking-widest"><CalendarDays size={18}/> {g.targetDate}</p>
+                     </div>
+                     <div className="text-right">
+                        <p className="text-5xl text-indigo-600">{Math.round((Number(g.current)/Number(g.target))*100)}%</p>
+                        <p className="text-[11px] text-slate-400 mt-1 font-black tracking-widest">Achieved</p>
+                     </div>
                    </div>
-                   <div className="w-full bg-gray-100 h-6 rounded-full overflow-hidden mb-10 border shadow-inner"><div className="bg-black h-full transition-all duration-1000 shadow-xl" style={{width:`${Math.min((g.current/g.target)*100, 100)}%`}}></div></div>
-                   <div className="space-y-4">
-                      <h4 className="text-[10px] font-black uppercase text-gray-400 flex items-center gap-2 tracking-widest border-b pb-2"><History size={12}/> Deposit History</h4>
-                      <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar uppercase font-black">
-                         {g.history.map(tx => (
-                           <div key={tx.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-transparent hover:border-blue-100 transition-all">
-                              <p className="text-[10px] text-gray-700">{tx.date}</p><p className="text-[10px] font-black text-green-600">₹{Number(tx.amount).toLocaleString()}</p>
-                           </div>
-                         ))}
+                   
+                   <div className="relative mb-12">
+                      <div className="w-full bg-slate-100 h-5 rounded-full overflow-hidden border border-slate-50 shadow-inner p-1">
+                        <div className="h-full bg-indigo-600 transition-all duration-[2500ms] ease-out rounded-full shadow-lg shadow-indigo-200" style={{width:`${Math.min((g.current/g.target)*100, 100)}%`}}></div>
+                      </div>
+                      <div className="flex justify-between mt-4 px-1 text-[11px] font-black text-slate-400 uppercase tracking-widest">
+                         <span>Saved: ₹{Number(g.current).toLocaleString()}</span>
+                         <span>Target: ₹{Number(g.target).toLocaleString()}</span>
+                      </div>
+                   </div>
+
+                   <div className="grid grid-cols-2 gap-8 mt-10">
+                      <div className="bg-slate-50 p-8 rounded-[3rem] text-center border-2 border-transparent hover:border-indigo-100 hover:bg-white transition-all group">
+                         <p className="text-[10px] font-black text-slate-400 mb-3 uppercase tracking-[0.2em]">Monthly Saving</p>
+                         <p className="text-3xl text-indigo-600 font-black">₹{g.monthlyRequired.toLocaleString()}</p>
+                      </div>
+                      <div className="bg-slate-50 p-8 rounded-[3rem] text-center border-2 border-transparent hover:border-slate-200 hover:bg-white transition-all">
+                         <p className="text-[10px] font-black text-slate-400 mb-3 uppercase tracking-[0.2em]">Remaining</p>
+                         <p className="text-3xl text-slate-800 font-black">₹{g.remaining.toLocaleString()}</p>
                       </div>
                    </div>
                 </div>
@@ -527,69 +566,211 @@ useEffect(() => {
           </div>
         )}
 
-        {activeTab === 'report' && (
-          <div className="space-y-10 animate-in slide-in-from-bottom-5">
-             <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm transition-all hover:shadow-lg font-black uppercase">
-                <h3 className="text-2xl tracking-tighter text-gray-900 flex items-center gap-3"><FileText className="text-blue-500" /> Grouped Statement Report</h3>
-             </div>
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {groupedReports.map(group => (
-                   <div key={group.label} className="bg-white p-6 rounded-[2.5rem] border shadow-sm hover:shadow-xl transition-all border-t-[8px] border-t-black">
-                      <div className="flex justify-between items-start mb-4"><h4 className="font-black uppercase text-gray-900 tracking-tighter">{group.label}</h4><span className="bg-gray-100 text-gray-500 text-[9px] font-black px-2 py-1 rounded-full">{group.items.length} TXs</span></div>
-                      <div className="mb-6"><p className="text-[10px] font-black text-gray-400 uppercase">Total Flow</p><p className="text-3xl font-black text-gray-900">₹{group.total.toLocaleString()}</p></div>
-                      <div className="space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar pr-2 uppercase text-[10px] font-black">
-                         {group.items.map(item => (<div key={item.id} className="flex justify-between items-center p-2 bg-gray-50 rounded-xl text-[10px] font-bold"><span>{item.date}</span><span className={item.type === 'Income' ? 'text-green-600' : 'text-red-600'}>₹{Number(item.amount).toLocaleString()}</span></div>))}
-                      </div>
-                   </div>
-                ))}
-             </div>
-          </div>
-        )}
-
+        {/* SETTINGS VIEW */}
         {activeTab === 'settings' && (
-          <div className="space-y-8 animate-in zoom-in duration-300">
-             <div className="bg-white p-10 rounded-[3rem] border shadow-sm max-w-3xl mx-auto">
-                <h3 className="font-black text-2xl uppercase mb-8 flex items-center gap-3 text-gray-800"><Database size={24} className="text-orange-500"/> Account Configuration</h3>
-                <form onSubmit={async (e) => { e.preventDefault(); const name = e.target.accName.value; const bal = e.target.accBal.value; await saveToCloud('accountRecords', Date.now(), { name, balance: Number(bal) }); e.target.reset(); }} className="flex gap-3 mb-10"><input name="accName" list="accs" required placeholder="Account Name" className="flex-[2] border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-bold outline-none focus:border-black transition-all" /><input name="accBal" type="number" required placeholder="Opening Balance ₹" className="flex-1 border-2 border-gray-100 bg-gray-50 p-4 rounded-2xl text-xs font-black outline-none focus:border-black transition-all" /><button type="submit" className="bg-black text-white px-8 rounded-2xl font-black uppercase text-[10px] active:scale-95 transition-all">Set</button></form>
-                <div className="space-y-3 uppercase font-black text-xs text-gray-600">
+          <div className="max-w-3xl mx-auto animate-in zoom-in duration-500 font-sans">
+             <div className="bg-white p-10 md:p-14 rounded-[4rem] shadow-sm border border-slate-100">
+                <div className="flex items-center gap-5 mb-12 px-2">
+                  <div className="bg-indigo-100 text-indigo-600 p-4 rounded-3xl"><Database size={28}/></div>
+                  <div>
+                    <h3 className="text-3xl font-black text-slate-800 tracking-tight uppercase">Master Accounts</h3>
+                    <p className="text-slate-400 text-xs font-black uppercase tracking-widest mt-1">Configure opening balances</p>
+                  </div>
+                </div>
+                
+                <form onSubmit={async (e) => { 
+                  e.preventDefault(); 
+                  const name = e.target.accName.value; 
+                  const bal = e.target.accBal.value; 
+                  await saveToCloud('accountRecords', Date.now(), { name, balance: Number(bal) }); 
+                  e.target.reset(); 
+                }} className="flex flex-col sm:flex-row gap-5 mb-14">
+                  <input name="accName" required placeholder="Account Name" className="flex-[2] bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all shadow-inner" />
+                  <input name="accBal" type="number" required placeholder="Balance ₹" className="flex-1 bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all shadow-inner" />
+                  <button type="submit" className="bg-indigo-600 text-white px-10 py-5 rounded-[1.5rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl shadow-indigo-100 hover:bg-indigo-700 transition-all">Set</button>
+                </form>
+
+                <div className="space-y-4">
                    {accountRecords.map(acc => (
-                     <div key={acc.id} className="flex justify-between items-center p-5 bg-gray-50 rounded-[1.5rem] border-2 border-transparent hover:border-black transition-all group"><span>{acc.name}</span><div className="flex items-center gap-4"><span>₹{Number(acc.balance).toLocaleString()}</span><button onClick={()=>handleDelete('accountRecords', acc.id)} className="text-red-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button></div></div>
+                     <div key={acc.id} className="flex justify-between items-center p-6 bg-slate-50 rounded-[2rem] border-2 border-transparent hover:border-indigo-100 hover:bg-white hover:shadow-xl transition-all group">
+                       <span className="text-sm font-black text-slate-700 uppercase tracking-widest">{acc.name}</span>
+                       <div className="flex items-center gap-8">
+                          <span className="text-xl font-black text-slate-900 tracking-tight">₹{Number(acc.balance).toLocaleString()}</span>
+                          <button onClick={()=>handleDelete('accountRecords', acc.id)} className="p-3 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={20}/></button>
+                       </div>
+                     </div>
                    ))}
                 </div>
              </div>
           </div>
         )}
-
-        {activeTab === 'history' && (
-          <div className="bg-white rounded-[3rem] border shadow-sm overflow-hidden animate-in slide-in-from-bottom-5">
-            <div className="p-8 border-b flex flex-col md:flex-row gap-4 bg-gray-50/30 font-black uppercase"><div className="relative flex-grow max-w-xl w-full"><Search size={16} className="absolute left-4 top-3.5 text-gray-300"/><input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search Ledger..." className="w-full pl-12 border-none bg-white rounded-2xl text-xs font-bold shadow-sm py-3 outline-none focus:ring-1 focus:ring-black"/></div><select value={filterType} onChange={e=>setFilterType(e.target.value)} className="rounded-2xl px-6 py-3 text-xs bg-white border font-black uppercase outline-none transition-all hover:bg-gray-100"><option value="All">All Transactions</option><option value="Income">Income</option><option value="Expense">Expense</option><option value="Balance_Transfer">Transfers</option><option value="EMI_Payment">EMI</option><option value="Goal_Deposit">Goal Save</option></select></div>
-            <div className="overflow-x-auto"><table className="w-full text-left font-bold text-gray-700 uppercase tracking-tighter font-black"><thead className="bg-gray-50 text-[9px] font-black text-gray-400 uppercase tracking-widest border-b"><tr><th className="p-5">Timeline</th><th className="p-5">Record Details</th><th className="p-5 text-right">Amount</th><th className="p-5 text-center">Manage</th></tr></thead><tbody className="divide-y text-xs">{filteredTx.map(t => (<tr key={t.id} className="hover:bg-gray-50 transition-all group font-black uppercase"><td className="p-5 text-gray-400 text-xs font-black tracking-tighter">{t.date}</td><td className="p-5"><p className="font-black text-xs text-gray-900">{t.subcategory || t.category}</p><p className="text-[9px] text-gray-400 italic">{t.account} {t.toAccount ? `→ ${t.toAccount}` : ''} • {t.status}</p></td><td className={`p-5 font-black text-sm text-right ${t.type==='Income'?'text-green-600':t.type==='Balance_Transfer'?'text-orange-500':'text-red-600'}`}>₹{Number(t.amount).toLocaleString()}</td><td className="p-5 flex justify-center gap-2"><button onClick={()=>{setFormData({...t, amount:t.amount.toString()}); setEditingId(t.id); setIsModalOpen(true);}} className="p-2 bg-blue-50 text-blue-500 rounded-xl hover:scale-110 transition-transform"><Pencil size={14}/></button><button onClick={()=>handleDelete('transactions', t.id)} className="p-2 bg-red-50 text-red-400 rounded-xl hover:scale-110 transition-transform"><Trash2 size={14}/></button></td></tr>))}</tbody></table></div>
-          </div>
-        )}
       </main>
 
-      {/* --- MOBILE NAVIGATION --- */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around p-4 z-40 backdrop-blur-xl bg-white/90">
+      {/* MOBILE NAVIGATION BAR */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-2xl border-t border-slate-100 flex justify-around items-center p-4 z-40 shadow-[0_-15px_30px_rgba(0,0,0,0.05)]">
         {[
           { id: 'dashboard', icon: <LayoutDashboard size={24}/> },
           { id: 'history', icon: <ArrowRightLeft size={24}/> },
           { id: 'debts', icon: <UserCheck size={24}/> },
-          { id: 'report', icon: <FileText size={24}/> },
+          { id: 'goals', icon: <Target size={24}/> },
           { id: 'settings', icon: <Settings size={24}/> }
         ].map(tab => (
-          <button key={tab.id} onClick={()=>setActiveTab(tab.id)} className={`p-3 rounded-2xl transition-all ${activeTab===tab.id?'bg-black text-white shadow-md':'text-gray-400'}`}>{tab.icon}</button>
+          <button 
+            key={tab.id} 
+            onClick={()=>setActiveTab(tab.id)} 
+            className={`p-3 rounded-2xl transition-all duration-300 ${activeTab===tab.id ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-200 scale-110' : 'text-slate-400 hover:bg-slate-50'}`}
+          >
+            {tab.icon}
+          </button>
         ))}
-        <button onClick={()=>{setIsModalOpen(true); setEditingId(null);}} className="p-4 bg-black text-white rounded-3xl -mt-10 border-4 border-white shadow-xl active:scale-90 transition-all font-black"><Plus size={32}/></button>
+        <button 
+          onClick={()=>{setEditingId(null); setIsModalOpen(true);}} 
+          className="p-4 bg-slate-900 text-white rounded-full -mt-16 border-4 border-slate-50 shadow-2xl active:scale-90 transition-all flex items-center justify-center"
+        >
+          <Plus size={32} strokeWidth={3}/>
+        </button>
       </div>
 
-      {/* MODALS: GOAL & DEBT */}
-      <div className={`fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all ${isGoalModalOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}><div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in duration-300"><div className="p-8 border-b bg-gray-50 flex justify-between items-center"><h3 className="font-black uppercase tracking-tight text-lg flex items-center gap-2 text-gray-800"><Target className="text-blue-500"/> {editingGoalId ? 'Edit Future Goal' : 'Plan Future Goal'}</h3><button onClick={() => { setIsGoalModalOpen(false); setEditingGoalId(null); }}><X size={20}/></button></div><form onSubmit={handleGoal} className="p-8 space-y-5"><input required value={goalFormData.name} onChange={e=>setGoalFormData({...goalFormData, name:e.target.value})} placeholder="Goal Name" className="w-full border-2 border-gray-100 p-4 rounded-2xl font-black uppercase text-xs outline-none focus:border-black transition-all" /><div className="grid grid-cols-2 gap-4"><input type="number" required value={goalFormData.target} onChange={e=>setGoalFormData({...goalFormData, target:e.target.value})} placeholder="Target ₹" className="w-full border-2 border-gray-100 p-4 rounded-2xl font-black text-xs outline-none" /><input type="date" required value={goalFormData.targetDate} onChange={e=>setGoalFormData({...goalFormData, targetDate:e.target.value})} className="w-full border-2 border-gray-100 p-4 rounded-2xl font-black text-xs outline-none" /></div><input type="number" value={goalFormData.current} onChange={e=>setGoalFormData({...goalFormData, current:e.target.value})} placeholder="Initial Savings ₹" className="w-full border-2 border-gray-100 p-4 rounded-2xl font-black text-xs outline-none" />{goalFormData.target && goalFormData.targetDate && (<div className="p-4 bg-purple-50 rounded-2xl border-2 border-purple-100 animate-in fade-in zoom-in"><p className="text-[9px] font-black text-purple-400 uppercase tracking-widest mb-1 text-center">Live Estimation</p><div className="flex justify-between items-center px-2"><span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter">Required Monthly:</span><span className="text-lg font-black text-purple-600">₹{(() => { const rem = Number(goalFormData.target) - Number(goalFormData.current); const diff = Math.abs(new Date(goalFormData.targetDate) - new Date()); const mos = Math.ceil(diff / (1000 * 60 * 60 * 24 * 30.44)) || 1; return (rem > 0 ? Math.ceil(rem / mos) : 0).toLocaleString(); })()}</span></div></div>)}<button type="submit" className="w-full bg-black text-white py-5 rounded-[1.5rem] font-black uppercase text-xs shadow-xl active:scale-95">Save Goal</button></form></div></div>
-      <div className={`fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all ${isDebtModalOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}><div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in duration-300"><div className="p-8 border-b bg-gray-50 flex justify-between items-center"><h3 className="font-black uppercase tracking-tight text-lg text-gray-800">Master Record Setup</h3><button onClick={()=>setIsDebtModalOpen(false)}><X size={20}/></button></div><form onSubmit={handleDebt} className="p-8 space-y-5"><input required value={debtFormData.name} onChange={e=>setDebtFormData({...debtFormData, name:e.target.value})} placeholder="Name" className="w-full border-2 border-gray-100 p-4 rounded-2xl font-black uppercase text-xs" /><div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Record Type</label><select value={debtFormData.type} onChange={e=>setDebtFormData({...debtFormData, type:e.target.value})} className="w-full border-2 border-gray-100 p-4 rounded-2xl font-black uppercase text-xs bg-white focus:border-black"><option value="Given">Lent (Receivable)</option><option value="Taken">Borrowed (Payable/EMI)</option><option value="Subscription">Subscription/LIC</option></select></div><input type="number" required value={debtFormData.total} onChange={e=>setDebtFormData({...debtFormData, total:e.target.value})} placeholder="Total ₹" className="w-full border-2 border-gray-100 p-4 rounded-2xl font-black uppercase text-xs" /><input type="date" required value={debtFormData.dueDate} onChange={e=>setDebtFormData({...debtFormData, dueDate:e.target.value})} className="w-full border-2 border-gray-100 p-4 rounded-2xl font-black uppercase text-xs" /><button type="submit" className="w-full bg-black text-white py-5 rounded-[1.5rem] font-black uppercase text-xs">Save Master Record</button></form></div></div>
+      {/* --- ALL MODALS (Standardized Premium UI) --- */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all animate-in fade-in duration-300">
+           <div className="bg-white rounded-[3.5rem] w-full max-w-xl max-h-[90vh] shadow-2xl overflow-hidden flex flex-col p-8 md:p-12 border border-slate-100 font-black uppercase">
+              <div className="flex justify-between items-center mb-10 px-2">
+                <div>
+                  <h3 className="text-3xl text-slate-800 tracking-tighter">New Entry</h3>
+                  <p className="text-slate-400 text-[10px] tracking-widest mt-2 uppercase font-black">Secure Cloud Transaction</p>
+                </div>
+                <button onClick={() => setIsModalOpen(false)} className="p-4 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-3xl transition-all"><X size={24}/></button>
+              </div>
+              <form onSubmit={handleTransaction} className="space-y-6 overflow-y-auto px-2 custom-scrollbar pr-4 pb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-slate-400 tracking-widest ml-2">Entry Date</label>
+                    <input type="date" required value={formData.date} onChange={e=>setFormData({...formData, date:e.target.value})} className="w-full bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-xs font-black outline-none focus:bg-white focus:border-indigo-500 transition-all" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-indigo-500 tracking-widest ml-2">Type of flow</label>
+                    <select value={formData.type} onChange={e=>setFormData({...formData, type:e.target.value, linkedId:''})} className="w-full bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-xs font-black outline-none focus:bg-white focus:border-indigo-500 transition-all">
+                      <option value="Expense">Expense (-)</option>
+                      <option value="Income">Income (+)</option>
+                      <option value="EMI_Payment">EMI Payment</option>
+                      <option value="Goal_Deposit">Goal Saving</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-[10px] text-slate-400 tracking-widest ml-2">Category Group</label>
+                  <input list="cats" required value={formData.category} onChange={e=>setFormData({...formData, category:e.target.value})} placeholder="Salary, Rent, Fuel..." className="w-full bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-xs font-black outline-none focus:bg-white focus:border-indigo-500 transition-all" />
+                </div>
 
-      <datalist id="accs">{accounts.map(a=><option key={a} value={a}/>)}</datalist>
-      <datalist id="types">{entryTypes.map(t=><option key={t} value={t}/>)}</datalist>
+                <div className="space-y-2">
+                  <label className="text-[10px] text-slate-400 tracking-widest ml-2">Description</label>
+                  <input required value={formData.subcategory} onChange={e=>setFormData({...formData, subcategory:e.target.value})} placeholder="What is this for?" className="w-full bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-xs font-black outline-none focus:bg-white focus:border-indigo-500 transition-all" />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-amber-600 tracking-widest ml-2">Account Used</label>
+                    <input list="accs" required value={formData.account} onChange={e=>setFormData({...formData, account:e.target.value})} placeholder="Bank, Cash..." className="w-full bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-xs font-black outline-none focus:bg-white focus:border-indigo-500 transition-all" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-slate-400 tracking-widest ml-2">Amount in ₹</label>
+                    <input type="number" required value={formData.amount} onChange={e=>setFormData({...formData, amount:e.target.value})} placeholder="0.00" className="w-full bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-xl font-black outline-none focus:bg-white focus:border-indigo-500 transition-all" />
+                  </div>
+                </div>
+
+                {['EMI_Payment', 'Income', 'Expense', 'Goal_Deposit'].includes(formData.type) && (
+                  <div className="space-y-2 bg-indigo-50/50 p-6 rounded-[2.5rem] border-2 border-indigo-100">
+                    <label className="text-[10px] text-indigo-500 tracking-widest ml-2">Link Master Record</label>
+                    <select value={formData.linkedId} onChange={e=>setFormData({...formData, linkedId:e.target.value})} className="w-full bg-white border-2 border-indigo-50 p-5 rounded-2xl text-xs font-black outline-none focus:border-indigo-500 shadow-sm transition-all">
+                      <option value="">-- No Link (Standalone) --</option>
+                      {debts.map(d=><option key={d.id} value={d.id}>{d.name} ({d.type})</option>)}
+                      {goals.map(g=><option key={g.id} value={g.id}>Goal: {g.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                
+                <div className="flex gap-4 pt-4">
+                   <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-slate-100 text-slate-600 p-5 rounded-[1.5rem] font-black text-xs tracking-widest hover:bg-slate-200 transition-all">Back</button>
+                   <button type="submit" className="flex-[2] bg-slate-900 text-white p-5 rounded-[1.5rem] font-black text-xs tracking-[0.2em] shadow-2xl hover:bg-slate-800 active:scale-95 transition-all">Save Record</button>
+                </div>
+              </form>
+           </div>
+        </div>
+      )}
+
+      {/* MASTER RECORD MODAL */}
+      {isDebtModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-[3.5rem] w-full max-w-md p-10 shadow-2xl border border-slate-100 font-black uppercase">
+            <h3 className="text-3xl text-slate-800 tracking-tighter mb-10 px-2">Master Ledger</h3>
+            <form onSubmit={handleDebt} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] text-slate-400 tracking-widest ml-2">Name of Entry</label>
+                <input required value={debtFormData.name} onChange={e=>setDebtFormData({...debtFormData, name:e.target.value})} placeholder="Person or Policy Name" className="w-full bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-xs font-black outline-none focus:bg-white focus:border-indigo-500 transition-all" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] text-slate-400 tracking-widest ml-2">Hisab Category</label>
+                <select value={debtFormData.type} onChange={e=>setDebtFormData({...debtFormData, type:e.target.value})} className="w-full bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-xs font-black outline-none focus:bg-white focus:border-indigo-500 transition-all">
+                  <option value="Given">Lent (Receivable)</option>
+                  <option value="Taken">Borrowed (Payable)</option>
+                  <option value="Subscription">Policy / Subscription</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] text-slate-400 tracking-widest ml-2">Principal</label>
+                  <input type="number" required value={debtFormData.total} onChange={e=>setDebtFormData({...debtFormData, total:e.target.value})} placeholder="Total ₹" className="w-full bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-xs font-black outline-none focus:bg-white focus:border-indigo-500 transition-all" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] text-slate-400 tracking-widest ml-2">Due Date</label>
+                  <input type="date" required value={debtFormData.dueDate} onChange={e=>setDebtFormData({...debtFormData, dueDate:e.target.value})} className="w-full bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-xs font-black outline-none focus:bg-white focus:border-indigo-500 transition-all" />
+                </div>
+              </div>
+              <div className="flex gap-4 mt-10">
+                <button type="button" onClick={()=>setIsDebtModalOpen(false)} className="flex-1 bg-slate-100 text-slate-600 p-5 rounded-2xl font-black text-xs tracking-widest hover:bg-slate-200 transition-all">Back</button>
+                <button type="submit" className="flex-1 bg-slate-900 text-white p-5 rounded-2xl font-black text-xs tracking-widest shadow-xl hover:bg-slate-800 transition-all">Save Hisab</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      
+      {/* GOAL MODAL */}
+      {isGoalModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-[3.5rem] w-full max-w-md p-10 shadow-2xl border border-slate-100 font-black uppercase">
+            <h3 className="text-3xl text-slate-800 tracking-tighter mb-10 px-2">New Savings Goal</h3>
+            <form onSubmit={handleGoal} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] text-slate-400 tracking-widest ml-2">Goal Name</label>
+                <input required value={goalFormData.name} onChange={e=>setGoalFormData({...goalFormData, name:e.target.value})} placeholder="Dream Project" className="w-full bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-xs font-black outline-none focus:bg-white focus:border-indigo-500 transition-all" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] text-slate-400 tracking-widest ml-2">Target Amount</label>
+                  <input type="number" required value={goalFormData.target} onChange={e=>setGoalFormData({...goalFormData, target:e.target.value})} placeholder="₹ 0.00" className="w-full bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-xs font-black outline-none focus:bg-white focus:border-indigo-500 transition-all" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] text-slate-400 tracking-widest ml-2">Final Date</label>
+                  <input type="date" required value={goalFormData.targetDate} onChange={e=>setGoalFormData({...goalFormData, targetDate:e.target.value})} className="w-full bg-slate-50 border-2 border-transparent p-5 rounded-2xl text-xs font-black outline-none focus:bg-white focus:border-indigo-500 transition-all" />
+                </div>
+              </div>
+              <div className="flex gap-4 mt-10">
+                <button type="button" onClick={()=>{setIsGoalModalOpen(false); setEditingGoalId(null);}} className="flex-1 bg-slate-100 text-slate-600 p-5 rounded-2xl font-black text-xs tracking-widest hover:bg-slate-200 transition-all">Back</button>
+                <button type="submit" className="flex-1 bg-indigo-600 text-white p-5 rounded-2xl font-black text-xs tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">Set Goal</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DATALISTS */}
       <datalist id="cats">{categories.map(c=><option key={c} value={c}/>)}</datalist>
-      <datalist id="subs">{subcategories.map(s=><option key={s} value={s}/>)}</datalist>
+      <datalist id="accs">{(['Bank', 'Cash', 'Credit Card', 'UPI', 'Wallet']).map(a=><option key={a} value={a}/>)}</datalist>
+      <datalist id="subs">{defaultSubcategories.map(s=><option key={s} value={s}/>)}</datalist>
+      <datalist id="types">{entryTypes.map(t=><option key={t} value={t}/>)}</datalist>
     </div>
   );
 };
